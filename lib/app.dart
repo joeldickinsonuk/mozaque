@@ -1988,58 +1988,66 @@ class _MemoryPage extends StatelessWidget {
     final shared = galleries
         .where((g) => g['owner_id'] != currentUserId)
         .toList();
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 100),
-      children: [
-        const Text(
-          'YOUR MOZAQUES',
-          style: TextStyle(
-            color: muted,
-            letterSpacing: 1.5,
-            fontWeight: FontWeight.w700,
-            fontSize: 11,
-          ),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 940),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 100),
+          children: [
+            const Text(
+              'YOUR MOZAQUES',
+              style: TextStyle(
+                color: muted,
+                letterSpacing: 1.5,
+                fontWeight: FontWeight.w700,
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 7),
+            const Text(
+              'Your Mozaques',
+              style: TextStyle(fontFamily: 'serif', fontSize: 34, color: ink),
+            ),
+            const SizedBox(height: 23),
+            _CollectionHeading(title: 'Created by you', count: mine.length),
+            const SizedBox(height: 11),
+            if (mine.isEmpty)
+              _EmptyCard(
+                icon: Icons.photo_library_outlined,
+                title: 'Make a place for a memory',
+                copy:
+                    'A gathering, a birthday, a holiday, or an ordinary Tuesday.',
+                action: 'Create a Mozaque',
+                onAction: onCreate,
+              )
+            else
+              ...mine.map(
+                (g) => _GalleryCard(gallery: g, onTap: () => onOpen(g)),
+              ),
+            const SizedBox(height: 21),
+            _CollectionHeading(title: 'Shared with you', count: shared.length),
+            const SizedBox(height: 5),
+            const Text(
+              'Private Mozaques shared with you by invitation or through your circle.',
+              style: TextStyle(color: muted, fontSize: 12),
+            ),
+            const SizedBox(height: 11),
+            if (shared.isEmpty)
+              _EmptyCard(
+                icon: Icons.mail_outline,
+                title: 'Shared Mozaques will find a home here',
+                copy:
+                    'Open a private invite link or enter its code to join a Mozaque.',
+                action: 'Enter invite code',
+                onAction: onJoin,
+              )
+            else
+              ...shared.map(
+                (g) => _GalleryCard(gallery: g, onTap: () => onOpen(g)),
+              ),
+          ],
         ),
-        const SizedBox(height: 7),
-        const Text(
-          'Your Mozaques',
-          style: TextStyle(fontFamily: 'serif', fontSize: 34, color: ink),
-        ),
-        const SizedBox(height: 23),
-        _CollectionHeading(title: 'Created by you', count: mine.length),
-        const SizedBox(height: 11),
-        if (mine.isEmpty)
-          _EmptyCard(
-            icon: Icons.photo_library_outlined,
-            title: 'Make a place for a memory',
-            copy: 'A gathering, a birthday, a holiday, or an ordinary Tuesday.',
-            action: 'Create a Mozaque',
-            onAction: onCreate,
-          )
-        else
-          ...mine.map((g) => _GalleryCard(gallery: g, onTap: () => onOpen(g))),
-        const SizedBox(height: 21),
-        _CollectionHeading(title: 'Shared with you', count: shared.length),
-        const SizedBox(height: 5),
-        const Text(
-          'Private Mozaques shared with you by invitation or through your circle.',
-          style: TextStyle(color: muted, fontSize: 12),
-        ),
-        const SizedBox(height: 11),
-        if (shared.isEmpty)
-          _EmptyCard(
-            icon: Icons.mail_outline,
-            title: 'Shared Mozaques will find a home here',
-            copy:
-                'Open a private invite link or enter its code to join a Mozaque.',
-            action: 'Enter invite code',
-            onAction: onJoin,
-          )
-        else
-          ...shared.map(
-            (g) => _GalleryCard(gallery: g, onTap: () => onOpen(g)),
-          ),
-      ],
+      ),
     );
   }
 }
@@ -2072,6 +2080,7 @@ class _GalleryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _colorFor(gallery['title'] as String);
+    final coverPath = gallery['cover_storage_path'] as String?;
     return Card(
       margin: const EdgeInsets.only(bottom: 11),
       child: InkWell(
@@ -2081,19 +2090,29 @@ class _GalleryCard extends StatelessWidget {
           padding: const EdgeInsets.all(15),
           child: Row(
             children: [
-              Container(
-                width: 67,
-                height: 67,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(.12),
-                  borderRadius: BorderRadius.circular(17),
+              if (coverPath != null)
+                SizedBox(
+                  width: 82,
+                  height: 76,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(17),
+                    child: _PhotoImage(path: coverPath, height: 76),
+                  ),
+                )
+              else
+                Container(
+                  width: 82,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(.12),
+                    borderRadius: BorderRadius.circular(17),
+                  ),
+                  child: Icon(
+                    Icons.photo_library_outlined,
+                    color: color,
+                    size: 28,
+                  ),
                 ),
-                child: Icon(
-                  Icons.photo_library_outlined,
-                  color: color,
-                  size: 28,
-                ),
-              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -2978,6 +2997,31 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
   }
 
+  Future<void> _setCover(String photoId) async {
+    try {
+      await repo.setGalleryCoverPhoto(_gallery['id'], photoId);
+      await _load();
+      await widget.onChanged();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Mozaque cover photo updated.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is PostgrestException
+                  ? e.message
+                  : 'Could not update this Mozaque’s cover photo.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final owner = _gallery['owner_id'] == _db.auth.currentUser?.id;
@@ -3252,8 +3296,13 @@ class _GalleryScreenState extends State<GalleryScreen> {
                   )
                 else
                   ..._photos.map(
-                    (p) =>
-                        _GalleryPhoto(photo: p, onPiece: (v) => _piece(p, v)),
+                    (p) => _GalleryPhoto(
+                      photo: p,
+                      onPiece: (v) => _piece(p, v),
+                      isCover: p['id'] == _gallery['cover_photo_id'],
+                      canSetCover: owner && _gallery['frozen_at'] == null,
+                      onSetCover: () => _setCover(p['id'] as String),
+                    ),
                   ),
               ],
             ),
@@ -3265,9 +3314,17 @@ class _GalleryScreenState extends State<GalleryScreen> {
 }
 
 class _GalleryPhoto extends StatefulWidget {
-  const _GalleryPhoto({required this.photo, required this.onPiece});
+  const _GalleryPhoto({
+    required this.photo,
+    required this.onPiece,
+    required this.isCover,
+    required this.canSetCover,
+    required this.onSetCover,
+  });
   final Map<String, dynamic> photo;
   final Future<void> Function(bool) onPiece;
+  final bool isCover, canSetCover;
+  final VoidCallback onSetCover;
   @override
   State<_GalleryPhoto> createState() => _GalleryPhotoState();
 }
@@ -3314,6 +3371,17 @@ class _GalleryPhotoState extends State<_GalleryPhoto> {
                 ),
                 label: Text(_piece ? 'Kept' : 'Keep a Piece'),
               ),
+              if (widget.canSetCover)
+                TextButton.icon(
+                  onPressed: widget.isCover ? null : widget.onSetCover,
+                  icon: Icon(
+                    widget.isCover
+                        ? Icons.check_circle_outline
+                        : Icons.photo_outlined,
+                    size: 18,
+                  ),
+                  label: Text(widget.isCover ? 'Cover photo' : 'Use as cover'),
+                ),
               const Spacer(),
               Text(
                 '${widget.photo['profiles']?['display_name'] ?? 'Someone'}',

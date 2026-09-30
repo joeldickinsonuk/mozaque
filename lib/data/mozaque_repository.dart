@@ -21,14 +21,36 @@ class MozaqueRepository {
       db.from('profiles').select().eq('id', uid).maybeSingle();
   Future<void> saveName(String value) async =>
       db.from('profiles').update({'display_name': value.trim()}).eq('id', uid);
-  Future<List<Map<String, dynamic>>> galleries() async =>
-      List<Map<String, dynamic>>.from(
-        await db
-            .from('galleries')
-            .select()
-            .order('created_at', ascending: false)
-            .limit(60),
-      );
+  Future<List<Map<String, dynamic>>> galleries() async {
+    final galleries = List<Map<String, dynamic>>.from(
+      await db
+          .from('galleries')
+          .select()
+          .order('created_at', ascending: false)
+          .limit(60),
+    );
+    final coverIds = galleries
+        .map((gallery) => gallery['cover_photo_id'])
+        .whereType<String>()
+        .toSet()
+        .toList();
+    if (coverIds.isEmpty) return galleries;
+
+    final covers = List<Map<String, dynamic>>.from(
+      await db
+          .from('photos')
+          .select('id,storage_path')
+          .inFilter('id', coverIds),
+    );
+    final paths = {
+      for (final photo in covers) photo['id']: photo['storage_path'],
+    };
+    for (final gallery in galleries) {
+      gallery['cover_storage_path'] = paths[gallery['cover_photo_id']];
+    }
+    return galleries;
+  }
+
   Future<Map<String, dynamic>> createGallery(
     Map<String, dynamic> values,
   ) async {
@@ -71,6 +93,11 @@ class MozaqueRepository {
       db.rpc(
         'add_connection_to_gallery',
         params: {'target_gallery': galleryId, 'target_user': userId},
+      );
+  Future<void> setGalleryCoverPhoto(String galleryId, String photoId) async =>
+      db.rpc(
+        'set_gallery_cover_photo',
+        params: {'target_gallery': galleryId, 'target_photo': photoId},
       );
   Future<List<Map<String, dynamic>>> photos({
     String? galleryId,
