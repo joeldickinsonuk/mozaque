@@ -21,6 +21,8 @@ const _typeLabels = {
   'other': 'Another moment',
 };
 
+enum _InviteAction { copy, share }
+
 class MozaqueApp extends StatelessWidget {
   const MozaqueApp({super.key, required this.configured});
   final bool configured;
@@ -770,15 +772,67 @@ class _HomeShellState extends State<HomeShell> {
       final subject = galleryId == null
           ? '$senderName would love to connect on Mozaque'
           : 'An invitation from $senderName to $galleryTitle';
-      final joinLink = kIsWeb
-          ? Uri.base.replace(queryParameters: {'invite': code}).toString()
-          : 'mozaque://invite?code=$code';
+      // Use the live web app as the universal invite destination until the
+      // native apps have verified iOS Universal Links / Android App Links.
+      final joinLink = mozaqueInviteLink(code);
       final message = galleryId == null
           ? 'Hi — it’s $senderName. I’m using Mozaque to keep shared photos in a private place for people we know, and I’d love you to join my circle.\n\nJoin me here: $joinLink\n\nIf the link doesn’t open, enter this private code in People: $code\n\nThe invitation expires in seven days.'
           : 'Hi — it’s $senderName. I’ve made a private Mozaque for “$galleryTitle” and would love you to be part of it. It’s a place for the photos and little moments we want to keep together.\n\nJoin “$galleryTitle”: $joinLink\n\nIf the link doesn’t open, enter this private code in People: $code\n\nThe invitation expires in seven days.';
-      await SharePlus.instance.share(
-        ShareParams(subject: subject, text: message),
+      if (!mounted) return;
+      final action = await showDialog<_InviteAction>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(
+            galleryId == null
+                ? 'Invite to your circle'
+                : 'Invite to $galleryTitle',
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Share this private invitation with someone you know. It expires in seven days.',
+                ),
+                const SizedBox(height: 12),
+                SelectableText(message, style: const TextStyle(fontSize: 13)),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Close'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, _InviteAction.copy),
+              icon: const Icon(Icons.copy_outlined),
+              label: const Text('Copy invite'),
+            ),
+            FilledButton.icon(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, _InviteAction.share),
+              icon: const Icon(Icons.ios_share),
+              label: const Text('Share…'),
+            ),
+          ],
+        ),
       );
+      if (!mounted || action == null) return;
+      if (action == _InviteAction.copy) {
+        await Clipboard.setData(ClipboardData(text: message));
+        _notice('Invitation copied. Paste it into a message or email.');
+      } else {
+        try {
+          await SharePlus.instance.share(
+            ShareParams(subject: subject, text: message),
+          );
+        } catch (_) {
+          await Clipboard.setData(ClipboardData(text: message));
+          _notice('Sharing is unavailable here, so the invitation was copied.');
+        }
+      }
     } catch (e) {
       _notice(_message(e));
     }
