@@ -2260,7 +2260,28 @@ class _CreateGallerySheetState extends State<CreateGallerySheet> {
   String _type = 'everyday', _policy = 'everyone', _audience = 'invited';
   DateTime _date = DateTime.now();
   bool _recurring = false, _busy = false;
+  bool _loadingConnections = true;
+  List<Map<String, dynamic>> _connections = [];
+  final Set<String> _selectedConnectionIds = {};
+  Map<String, dynamic>? _createdGallery;
   String? _error;
+  @override
+  void initState() {
+    super.initState();
+    _loadConnections();
+  }
+
+  Future<void> _loadConnections() async {
+    try {
+      final connections = await repo.connections();
+      if (mounted) setState(() => _connections = connections);
+    } catch (_) {
+      // Gallery creation should still work if the optional friend list cannot load.
+    } finally {
+      if (mounted) setState(() => _loadingConnections = false);
+    }
+  }
+
   @override
   void dispose() {
     _title.dispose();
@@ -2279,6 +2300,10 @@ class _CreateGallerySheetState extends State<CreateGallerySheet> {
   }
 
   Future<void> _save() async {
+    if (_createdGallery != null) {
+      Navigator.pop(context, _createdGallery);
+      return;
+    }
     if (!_form.currentState!.validate()) return;
     setState(() => _busy = true);
     try {
@@ -2292,6 +2317,21 @@ class _CreateGallerySheetState extends State<CreateGallerySheet> {
         'upload_policy': _policy,
         'audience': _audience,
       });
+      _createdGallery = created;
+      if (_audience == 'invited' && _selectedConnectionIds.isNotEmpty) {
+        try {
+          for (final userId in _selectedConnectionIds) {
+            await repo.addConnectionToGallery(created['id'], userId);
+          }
+        } catch (_) {
+          if (!mounted) return;
+          setState(() {
+            _error =
+                'Your Mozaque is saved, but we couldn’t add everyone. Open it and choose “Add people from your circle” to finish.';
+          });
+          return;
+        }
+      }
       if (mounted) Navigator.pop(context, created);
     } catch (e) {
       setState(
@@ -2466,6 +2506,87 @@ class _CreateGallerySheetState extends State<CreateGallerySheet> {
                       onChanged: (v) =>
                           setState(() => _audience = v ?? _audience),
                     ),
+                    if (_audience == 'invited') ...[
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Invite friends already in your circle',
+                              style: TextStyle(
+                                color: ink,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          if (_selectedConnectionIds.isNotEmpty)
+                            Text(
+                              '${_selectedConnectionIds.length} selected',
+                              style: const TextStyle(color: blue, fontSize: 12),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Choose existing friends now, or invite someone with a link after creating your Mozaque.',
+                        style: TextStyle(fontSize: 12, color: muted),
+                      ),
+                      const SizedBox(height: 6),
+                      if (_loadingConnections)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        )
+                      else if (_connections.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            'No connected friends yet. You can still create a link invite after this Mozaque is made.',
+                            style: TextStyle(fontSize: 12, color: muted),
+                          ),
+                        )
+                      else
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 190),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _connections.length,
+                            itemBuilder: (context, index) {
+                              final person = _connections[index];
+                              final id = person['id'] as String;
+                              final name = (person['display_name'] as String?)
+                                  ?.trim();
+                              return CheckboxListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
+                                title: Text(
+                                  name == null || name.isEmpty
+                                      ? 'Mozaque member'
+                                      : name,
+                                ),
+                                value: _selectedConnectionIds.contains(id),
+                                activeColor: blue,
+                                onChanged: (selected) => setState(() {
+                                  if (selected == true) {
+                                    _selectedConnectionIds.add(id);
+                                  } else {
+                                    _selectedConnectionIds.remove(id);
+                                  }
+                                }),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
                     const SizedBox(height: 8),
                     const Text(
                       'Photos stay private to people with access.',
@@ -2493,7 +2614,11 @@ class _CreateGallerySheetState extends State<CreateGallerySheet> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Text('Create Mozaque'),
+                            : Text(
+                                _createdGallery == null
+                                    ? 'Create Mozaque'
+                                    : 'Open Mozaque',
+                              ),
                       ),
                     ),
                   ],
