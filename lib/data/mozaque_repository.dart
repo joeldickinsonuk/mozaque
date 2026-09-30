@@ -252,6 +252,30 @@ class MozaqueRepository {
     }
   }
 
+  Future<List<Map<String, dynamic>>>
+  glowNotifications() async => List<Map<String, dynamic>>.from(
+    await db
+        .from('notifications')
+        .select(
+          'id,actor_name,photo_id,created_at,photos!notifications_photo_id_fkey(id,gallery_id,galleries!photos_gallery_id_fkey(id,title))',
+        )
+        .order('created_at', ascending: false)
+        .limit(20),
+  );
+
+  Future<void> deletePhoto(Map<String, dynamic> photo) async {
+    final path = photo['storage_path'] as String;
+    await db.storage.from('mozaque-photos').remove([path]);
+    final deleted = await db
+        .from('photos')
+        .delete()
+        .eq('id', photo['id'])
+        .select('id');
+    if (deleted.isEmpty) {
+      throw StateError('This photo can no longer be deleted.');
+    }
+  }
+
   Future<int> glowCount(String photoId) async =>
       (await db.from('glows').select('photo_id').eq('photo_id', photoId))
           .length;

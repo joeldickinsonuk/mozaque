@@ -622,6 +622,7 @@ class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
   List<Map<String, dynamic>> _galleries = [],
       _feed = [],
+      _glowNotifications = [],
       _pieces = [],
       _connections = [];
   Map<String, dynamic>? _profile;
@@ -700,6 +701,7 @@ class _HomeShellState extends State<HomeShell> {
         );
       final g = await repo.galleries();
       final f = await repo.feed();
+      final notifications = await repo.glowNotifications();
       final pieces = await repo.photos(pieces: true);
       final connections = await repo.connections();
       if (!mounted) return;
@@ -707,6 +709,7 @@ class _HomeShellState extends State<HomeShell> {
         _profile = p;
         _galleries = g;
         _feed = f;
+        _glowNotifications = notifications;
         _pieces = pieces;
         _connections = connections;
         _error = null;
@@ -962,6 +965,7 @@ class _HomeShellState extends State<HomeShell> {
       _FeedPage(
         galleries: _galleries,
         feed: _feed,
+        glowNotifications: _glowNotifications,
         profile: _profile,
         loading: _loading,
         error: _error,
@@ -1140,6 +1144,7 @@ class _FeedPage extends StatelessWidget {
   const _FeedPage({
     required this.galleries,
     required this.feed,
+    required this.glowNotifications,
     required this.profile,
     required this.loading,
     required this.error,
@@ -1147,7 +1152,7 @@ class _FeedPage extends StatelessWidget {
     required this.onCreate,
     required this.onOpen,
   });
-  final List<Map<String, dynamic>> galleries, feed;
+  final List<Map<String, dynamic>> galleries, feed, glowNotifications;
   final Map<String, dynamic>? profile;
   final bool loading;
   final String? error;
@@ -1253,9 +1258,33 @@ class _FeedPage extends StatelessWidget {
                         onTap: () => onOpen(g),
                       ),
                     ),
+                    ...glowNotifications.map((notification) {
+                      final actor =
+                          notification['actor_name']?.toString() ?? 'Someone';
+                      final photo =
+                          notification['photos'] as Map<String, dynamic>?;
+                      final gallery =
+                          photo?['galleries'] as Map<String, dynamic>?;
+                      final galleryId = photo?['gallery_id'];
+                      return _TimelineCard(
+                        kind: 'NEW GLOW',
+                        title: '$actor glowed your photo',
+                        detail:
+                            'In ${_presentMozaqueTitle(gallery?['title']?.toString() ?? 'a Mozaque')} · ${_relativeDate(notification['created_at'])}',
+                        icon: Icons.local_fire_department_outlined,
+                        accent: const Color(0xFFE5953D),
+                        onTap: () {
+                          final target = galleries
+                              .where((g) => g['id'] == galleryId)
+                              .firstOrNull;
+                          if (target != null) onOpen(target);
+                        },
+                      );
+                    }),
                     if (echoes.isNotEmpty ||
                         upcoming.isNotEmpty ||
-                        shared.isNotEmpty)
+                        shared.isNotEmpty ||
+                        glowNotifications.isNotEmpty)
                       const SizedBox(height: 18),
                     Row(
                       children: [
@@ -3022,6 +3051,55 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
   }
 
+  Future<void> _deletePhoto(Map<String, dynamic> photo) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this photo?'),
+        content: const Text(
+          'It will be removed from this Mozaque for everyone and cannot be restored.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep photo'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete photo'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await repo.deletePhoto(photo);
+      await _load();
+      await widget.onChanged();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo deleted from this Mozaque.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is PostgrestException
+                  ? e.message
+                  : e is StorageException
+                  ? e.message
+                  : e is StateError
+                  ? e.message.toString()
+                  : 'Could not delete this photo.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final owner = _gallery['owner_id'] == _db.auth.currentUser?.id;
@@ -3295,15 +3373,20 @@ class _GalleryScreenState extends State<GalleryScreen> {
                         : 'This Mozaque is waiting for its first photo.',
                   )
                 else
-                  ..._photos.map(
-                    (p) => _GalleryPhoto(
+                  ..._photos.map((p) {
+                    final canDelete =
+                        _gallery['frozen_at'] == null &&
+                        (owner || p['uploader_id'] == _db.auth.currentUser?.id);
+                    return _GalleryPhoto(
                       photo: p,
                       onPiece: (v) => _piece(p, v),
                       isCover: p['id'] == _gallery['cover_photo_id'],
                       canSetCover: owner && _gallery['frozen_at'] == null,
                       onSetCover: () => _setCover(p['id'] as String),
-                    ),
-                  ),
+                      canDelete: canDelete,
+                      onDelete: () => _deletePhoto(p),
+                    );
+                  }),
               ],
             ),
           ),
@@ -3320,11 +3403,15 @@ class _GalleryPhoto extends StatefulWidget {
     required this.isCover,
     required this.canSetCover,
     required this.onSetCover,
+    required this.canDelete,
+    required this.onDelete,
   });
   final Map<String, dynamic> photo;
   final Future<void> Function(bool) onPiece;
   final bool isCover, canSetCover;
   final VoidCallback onSetCover;
+  final bool canDelete;
+  final VoidCallback onDelete;
   @override
   State<_GalleryPhoto> createState() => _GalleryPhotoState();
 }
@@ -3381,6 +3468,15 @@ class _GalleryPhotoState extends State<_GalleryPhoto> {
                     size: 18,
                   ),
                   label: Text(widget.isCover ? 'Cover photo' : 'Use as cover'),
+                ),
+              if (widget.canDelete)
+                TextButton.icon(
+                  onPressed: widget.onDelete,
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: const Text('Delete photo'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.redAccent,
+                  ),
                 ),
               const Spacer(),
               Text(
