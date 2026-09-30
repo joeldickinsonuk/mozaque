@@ -140,6 +140,7 @@ class _SignInScreenState extends State<SignInScreen> {
   final _name = TextEditingController();
   bool _new = false, _busy = false, _obscure = true;
   bool _resetSent = false;
+  bool _confirmationSent = false;
   String? _error;
   @override
   void dispose() {
@@ -234,6 +235,44 @@ class _SignInScreenState extends State<SignInScreen> {
     }
   }
 
+  Future<void> _resendConfirmation() async {
+    final email = _email.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      setState(
+        () => _error =
+            'Add your email above and we’ll resend the confirmation link.',
+      );
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+      _confirmationSent = false;
+    });
+    try {
+      final redirectTo = kIsWeb
+          ? Uri.base.toString()
+          : 'https://joeldickinsonuk.github.io/mozaque/';
+      await _db.auth.resend(
+        type: OtpType.signup,
+        email: email,
+        emailRedirectTo: redirectTo,
+      );
+      if (mounted) setState(() => _confirmationSent = true);
+    } on AuthException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error =
+              'We couldn’t resend the link just now. Please try again.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -319,11 +358,41 @@ class _SignInScreenState extends State<SignInScreen> {
                       onFieldSubmitted: (_) => _submit(),
                     ),
                     if (!_new)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: _busy ? null : _sendPasswordReset,
-                          child: const Text('Forgot your password?'),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _busy ? null : _sendPasswordReset,
+                              child: const Text('Forgot your password?'),
+                            ),
+                          ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _busy ? null : _resendConfirmation,
+                              child: const Text('Resend confirmation email'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    if (_confirmationSent)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(top: 5),
+                        padding: const EdgeInsets.all(13),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEDF7F3),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Text(
+                          'If this account still needs confirmation, a fresh link is on its way. It will return you to Mozaque.',
+                          style: TextStyle(
+                            color: Color(0xFF306C5A),
+                            height: 1.4,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     if (_resetSent)
