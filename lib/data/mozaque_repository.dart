@@ -106,7 +106,7 @@ class MozaqueRepository {
     var query = db
         .from('photos')
         .select(
-          '*,profiles!photos_uploader_id_fkey(display_name),galleries(id,title,event_date,is_recurring,event_type)',
+          '*,profiles!photos_uploader_id_fkey(display_name),galleries!photos_gallery_id_fkey(id,title,event_date,is_recurring,event_type)',
         );
     if (galleryId != null) query = query.eq('gallery_id', galleryId);
     if (pieces) {
