@@ -3010,241 +3010,254 @@ class _GalleryScreenState extends State<GalleryScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 8, 18, 34),
-          children: [
-            Container(
-              height: 144,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: color.withOpacity(.12),
-                borderRadius: BorderRadius.circular(23),
-              ),
-              child: Icon(Icons.photo_library_outlined, color: color, size: 52),
-            ),
-            const SizedBox(height: 17),
-            Wrap(
-              spacing: 7,
-              runSpacing: 7,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 940),
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 34),
               children: [
-                _Tag(_typeLabels[_gallery['event_type']] ?? 'Moment'),
-                if (_gallery['is_recurring']) const _Tag('Every year'),
-                if (_gallery['frozen_at'] != null)
-                  const _Tag('Preserved', icon: Icons.lock_outline),
-              ],
-            ),
-            const SizedBox(height: 9),
-            Text(
-              _gallery['title'],
-              style: const TextStyle(
-                fontFamily: 'serif',
-                fontSize: 32,
-                height: 1.15,
-                color: ink,
-              ),
-            ),
-            if ((_gallery['description'] as String).isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 7),
-                child: Text(
-                  _gallery['description'],
-                  style: const TextStyle(color: muted),
+                Container(
+                  height: 144,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(.12),
+                    borderRadius: BorderRadius.circular(23),
+                  ),
+                  child: Icon(
+                    Icons.photo_library_outlined,
+                    color: color,
+                    size: 52,
+                  ),
                 ),
-              ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const Icon(
-                  Icons.calendar_today_outlined,
-                  size: 16,
-                  color: muted,
+                const SizedBox(height: 17),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: [
+                    _Tag(_typeLabels[_gallery['event_type']] ?? 'Moment'),
+                    if (_gallery['is_recurring']) const _Tag('Every year'),
+                    if (_gallery['frozen_at'] != null)
+                      const _Tag('Preserved', icon: Icons.lock_outline),
+                  ],
                 ),
-                const SizedBox(width: 7),
+                const SizedBox(height: 9),
                 Text(
-                  _shortDate(_gallery['event_date']),
-                  style: const TextStyle(color: muted),
-                ),
-                const SizedBox(width: 14),
-                const Icon(Icons.people_outline, size: 17, color: muted),
-                const SizedBox(width: 4),
-                Text(
-                  '${_members.length + 1} people',
-                  style: const TextStyle(color: muted),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            if (owner &&
-                _gallery['audience'] == 'invited' &&
-                _gallery['frozen_at'] == null) ...[
-              OutlinedButton.icon(
-                onPressed: _addingPeople ? null : _addPeople,
-                icon: _addingPeople
-                    ? const SizedBox(
-                        width: 17,
-                        height: 17,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.group_add_outlined),
-                label: Text(
-                  _addingPeople
-                      ? 'Adding people…'
-                      : 'Add people from your circle',
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-            if (owner) ...[
-              DropdownButtonFormField<String>(
-                value: _gallery['audience'],
-                decoration: const InputDecoration(
-                  labelText: 'Who can see it?',
-                  prefixIcon: Icon(Icons.lock_outline),
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'invited',
-                    child: Text('People I invite'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'connections',
-                    child: Text('All my connections'),
-                  ),
-                ],
-                onChanged: _gallery['frozen_at'] == null
-                    ? (v) {
-                        if (v != null) _permissions('audience', v);
-                      }
-                    : null,
-              ),
-              const SizedBox(height: 9),
-              DropdownButtonFormField<String>(
-                value: _gallery['upload_policy'],
-                decoration: const InputDecoration(
-                  labelText: 'Who can add photos?',
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'everyone',
-                    child: Text('Everyone invited'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'selected',
-                    child: Text('Selected contributors'),
-                  ),
-                  DropdownMenuItem(value: 'owner', child: Text('Just me')),
-                ],
-                onChanged: _gallery['frozen_at'] == null
-                    ? (v) {
-                        if (v != null) _permissions('upload_policy', v);
-                      }
-                    : null,
-              ),
-              if (_gallery['upload_policy'] == 'selected' &&
-                  _members.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 7),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          'Choose who can add photos',
-                          style: TextStyle(
-                            color: muted,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      ..._members.map((m) {
-                        final p = m['profiles'] as Map<String, dynamic>?;
-                        final name = p?['display_name']?.toString() ?? 'Member';
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          dense: true,
-                          leading: _Avatar(name: name),
-                          title: Text(name),
-                          trailing: DropdownButton<String>(
-                            value: m['role'],
-                            onChanged: _gallery['frozen_at'] == null
-                                ? (v) {
-                                    if (v != null) _role(m['user_id'], v);
-                                  }
-                                : null,
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'viewer',
-                                child: Text('Can view'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'contributor',
-                                child: Text('Can add'),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                    ],
+                  _gallery['title'],
+                  style: const TextStyle(
+                    fontFamily: 'serif',
+                    fontSize: 32,
+                    height: 1.15,
+                    color: ink,
                   ),
                 ),
-            ],
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Memories',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
+                if ((_gallery['description'] as String).isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 7),
+                    child: Text(
+                      _gallery['description'],
+                      style: const TextStyle(color: muted),
                     ),
                   ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.calendar_today_outlined,
+                      size: 16,
+                      color: muted,
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      _shortDate(_gallery['event_date']),
+                      style: const TextStyle(color: muted),
+                    ),
+                    const SizedBox(width: 14),
+                    const Icon(Icons.people_outline, size: 17, color: muted),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_members.length + 1} people',
+                      style: const TextStyle(color: muted),
+                    ),
+                  ],
                 ),
-                Text(
-                  '${_photos.length} photos',
-                  style: const TextStyle(color: muted),
-                ),
-                if (_canUpload)
-                  IconButton(
-                    onPressed: _uploading ? null : _upload,
-                    tooltip: 'Add photos',
-                    icon: _uploading
+                const SizedBox(height: 14),
+                if (owner &&
+                    _gallery['audience'] == 'invited' &&
+                    _gallery['frozen_at'] == null) ...[
+                  OutlinedButton.icon(
+                    onPressed: _addingPeople ? null : _addPeople,
+                    icon: _addingPeople
                         ? const SizedBox(
-                            width: 19,
-                            height: 19,
+                            width: 17,
+                            height: 17,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(
-                            Icons.add_photo_alternate_outlined,
-                            color: blue,
+                        : const Icon(Icons.group_add_outlined),
+                    label: Text(
+                      _addingPeople
+                          ? 'Adding people…'
+                          : 'Add people from your circle',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                if (owner) ...[
+                  DropdownButtonFormField<String>(
+                    value: _gallery['audience'],
+                    decoration: const InputDecoration(
+                      labelText: 'Who can see it?',
+                      prefixIcon: Icon(Icons.lock_outline),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'invited',
+                        child: Text('People I invite'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'connections',
+                        child: Text('All my connections'),
+                      ),
+                    ],
+                    onChanged: _gallery['frozen_at'] == null
+                        ? (v) {
+                            if (v != null) _permissions('audience', v);
+                          }
+                        : null,
+                  ),
+                  const SizedBox(height: 9),
+                  DropdownButtonFormField<String>(
+                    value: _gallery['upload_policy'],
+                    decoration: const InputDecoration(
+                      labelText: 'Who can add photos?',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'everyone',
+                        child: Text('Everyone invited'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'selected',
+                        child: Text('Selected contributors'),
+                      ),
+                      DropdownMenuItem(value: 'owner', child: Text('Just me')),
+                    ],
+                    onChanged: _gallery['frozen_at'] == null
+                        ? (v) {
+                            if (v != null) _permissions('upload_policy', v);
+                          }
+                        : null,
+                  ),
+                  if (_gallery['upload_policy'] == 'selected' &&
+                      _members.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 7),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              'Choose who can add photos',
+                              style: TextStyle(
+                                color: muted,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
+                          ..._members.map((m) {
+                            final p = m['profiles'] as Map<String, dynamic>?;
+                            final name =
+                                p?['display_name']?.toString() ?? 'Member';
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              leading: _Avatar(name: name),
+                              title: Text(name),
+                              trailing: DropdownButton<String>(
+                                value: m['role'],
+                                onChanged: _gallery['frozen_at'] == null
+                                    ? (v) {
+                                        if (v != null) _role(m['user_id'], v);
+                                      }
+                                    : null,
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'viewer',
+                                    child: Text('Can view'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'contributor',
+                                    child: Text('Can add'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Memories',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${_photos.length} photos',
+                      style: const TextStyle(color: muted),
+                    ),
+                    if (_canUpload)
+                      IconButton(
+                        onPressed: _uploading ? null : _upload,
+                        tooltip: 'Add photos',
+                        icon: _uploading
+                            ? const SizedBox(
+                                width: 19,
+                                height: 19,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.add_photo_alternate_outlined,
+                                color: blue,
+                              ),
+                      ),
+                  ],
+                ),
+                if (_loading && _photos.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(25),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_error != null)
+                  Center(
+                    child: Text(_error!, style: const TextStyle(color: muted)),
+                  )
+                else if (_photos.isEmpty)
+                  _EmptyCard(
+                    icon: Icons.photo_camera_back_outlined,
+                    title: 'A space for this memory',
+                    copy: _canUpload
+                        ? 'Add the first photo when you’re ready.'
+                        : 'This Mozaque is waiting for its first photo.',
+                  )
+                else
+                  ..._photos.map(
+                    (p) =>
+                        _GalleryPhoto(photo: p, onPiece: (v) => _piece(p, v)),
                   ),
               ],
             ),
-            if (_loading && _photos.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(25),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_error != null)
-              Center(
-                child: Text(_error!, style: const TextStyle(color: muted)),
-              )
-            else if (_photos.isEmpty)
-              _EmptyCard(
-                icon: Icons.photo_camera_back_outlined,
-                title: 'A space for this memory',
-                copy: _canUpload
-                    ? 'Add the first photo when you’re ready.'
-                    : 'This Mozaque is waiting for its first photo.',
-              )
-            else
-              ..._photos.map(
-                (p) => _GalleryPhoto(photo: p, onPiece: (v) => _piece(p, v)),
-              ),
-          ],
+          ),
         ),
       ),
     );
@@ -3274,7 +3287,12 @@ class _GalleryPhotoState extends State<_GalleryPhoto> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _PhotoImage(path: widget.photo['storage_path'], height: 250),
+        LayoutBuilder(
+          builder: (context, constraints) => _PhotoImage(
+            path: widget.photo['storage_path'],
+            height: (constraints.maxWidth * .68).clamp(260, 600).toDouble(),
+          ),
+        ),
         if ((widget.photo['caption'] as String).isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(13, 9, 13, 0),
