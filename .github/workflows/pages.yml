@@ -1,0 +1,52 @@
+name: Build and publish Mozaque web preview
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out project
+        uses: actions/checkout@v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build web app for GitHub Pages
+        run: flutter build web --release --base-href "/${GITHUB_REPOSITORY#*/}/"
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload web build
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/web
+
+      - name: Publish web preview
+        id: deployment
+        uses: actions/deploy-pages@v4
