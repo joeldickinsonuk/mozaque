@@ -29,14 +29,6 @@ class MozaqueRepository {
             .order('created_at', ascending: false)
             .limit(60),
       );
-  Future<Set<String>> invitedGalleryIds() async {
-    final rows = await db
-        .from('gallery_members')
-        .select('gallery_id')
-        .eq('user_id', uid);
-    return rows.map<String>((row) => row['gallery_id'] as String).toSet();
-  }
-
   Future<Map<String, dynamic>> createGallery(
     Map<String, dynamic> values,
   ) async {
@@ -74,6 +66,11 @@ class MozaqueRepository {
             .from('gallery_members')
             .select('user_id,role,profiles(display_name)')
             .eq('gallery_id', galleryId),
+      );
+  Future<void> addConnectionToGallery(String galleryId, String userId) async =>
+      db.rpc(
+        'add_connection_to_gallery',
+        params: {'target_gallery': galleryId, 'target_user': userId},
       );
   Future<List<Map<String, dynamic>>> photos({
     String? galleryId,

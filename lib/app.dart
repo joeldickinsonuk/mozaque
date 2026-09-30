@@ -624,7 +624,6 @@ class _HomeShellState extends State<HomeShell> {
       _feed = [],
       _pieces = [],
       _connections = [];
-  Set<String> _invitedGalleryIds = {};
   Map<String, dynamic>? _profile;
   bool _loading = true;
   String? _error;
@@ -703,7 +702,6 @@ class _HomeShellState extends State<HomeShell> {
       final f = await repo.feed();
       final pieces = await repo.photos(pieces: true);
       final connections = await repo.connections();
-      final invitedGalleryIds = await repo.invitedGalleryIds();
       if (!mounted) return;
       setState(() {
         _profile = p;
@@ -711,7 +709,6 @@ class _HomeShellState extends State<HomeShell> {
         _feed = f;
         _pieces = pieces;
         _connections = connections;
-        _invitedGalleryIds = invitedGalleryIds;
         _error = null;
       });
     } catch (e) {
@@ -987,7 +984,6 @@ class _HomeShellState extends State<HomeShell> {
       ),
       _MemoryPage(
         galleries: _galleries,
-        invitedGalleryIds: _invitedGalleryIds,
         currentUserId: _db.auth.currentUser?.id ?? '',
         onCreate: _create,
         onJoin: _joinWithCode,
@@ -1972,14 +1968,12 @@ class _ConnectionsPage extends StatelessWidget {
 class _MemoryPage extends StatelessWidget {
   const _MemoryPage({
     required this.galleries,
-    required this.invitedGalleryIds,
     required this.currentUserId,
     required this.onCreate,
     required this.onJoin,
     required this.onOpen,
   });
   final List<Map<String, dynamic>> galleries;
-  final Set<String> invitedGalleryIds;
   final String currentUserId;
   final VoidCallback onCreate, onJoin;
   final ValueChanged<Map<String, dynamic>> onOpen;
@@ -1988,12 +1982,11 @@ class _MemoryPage extends StatelessWidget {
     final mine = galleries
         .where((g) => g['owner_id'] == currentUserId)
         .toList();
-    final invited = galleries
-        .where(
-          (g) =>
-              g['owner_id'] != currentUserId &&
-              invitedGalleryIds.contains(g['id'] as String),
-        )
+    // The galleries query is already filtered by Supabase RLS. Include every
+    // visible gallery owned by someone else, even when access comes from the
+    // owner's connections rather than a direct gallery_members row.
+    final shared = galleries
+        .where((g) => g['owner_id'] != currentUserId)
         .toList();
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 100),
@@ -2026,24 +2019,24 @@ class _MemoryPage extends StatelessWidget {
         else
           ...mine.map((g) => _GalleryCard(gallery: g, onTap: () => onOpen(g))),
         const SizedBox(height: 21),
-        _CollectionHeading(title: 'Invited Mozaques', count: invited.length),
+        _CollectionHeading(title: 'Shared with you', count: shared.length),
         const SizedBox(height: 5),
         const Text(
-          'Private Mozaques you’ve joined through an invitation.',
+          'Private Mozaques shared with you by invitation or through your circle.',
           style: TextStyle(color: muted, fontSize: 12),
         ),
         const SizedBox(height: 11),
-        if (invited.isEmpty)
+        if (shared.isEmpty)
           _EmptyCard(
             icon: Icons.mail_outline,
-            title: 'Your invitations will find a home here',
+            title: 'Shared Mozaques will find a home here',
             copy:
                 'Open a private invite link or enter its code to join a Mozaque.',
             action: 'Enter invite code',
             onAction: onJoin,
           )
         else
-          ...invited.map(
+          ...shared.map(
             (g) => _GalleryCard(gallery: g, onTap: () => onOpen(g)),
           ),
       ],
@@ -2531,7 +2524,7 @@ class GalleryScreen extends StatefulWidget {
 class _GalleryScreenState extends State<GalleryScreen> {
   late Map<String, dynamic> _gallery;
   List<Map<String, dynamic>> _photos = [], _members = [];
-  bool _loading = true, _uploading = false;
+  bool _loading = true, _uploading = false, _addingPeople = false;
   bool _canUpload = false;
   String? _error;
   @override
@@ -2697,6 +2690,151 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
   }
 
+  Future<void> _addPeople() async {
+    try {
+      final alreadyAdded = _members.map((m) => m['user_id'] as String).toSet();
+      final candidates = (await repo.connections())
+          .where((person) => !alreadyAdded.contains(person['id']))
+          .toList();
+      if (!mounted) return;
+      if (candidates.isEmpty) {
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Your circle is ready to grow'),
+            content: const Text(
+              'Connect with someone from the People tab first. Then you can choose them for this Mozaque.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Done'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      final selected = <String>{};
+      final peopleToAdd = await showModalBottomSheet<List<String>>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (context, setSheetState) => Container(
+            height: MediaQuery.sizeOf(context).height * .72,
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+            decoration: const BoxDecoration(
+              color: paper,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'YOUR CIRCLE',
+                    style: TextStyle(
+                      color: muted,
+                      letterSpacing: 1.4,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 10,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'Who should be here?',
+                    style: TextStyle(
+                      fontFamily: 'serif',
+                      fontSize: 26,
+                      color: ink,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Choose the people from your circle who can see this Mozaque.',
+                    style: TextStyle(color: muted, fontSize: 13),
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: ListView(
+                      children: candidates.map((person) {
+                        final id = person['id'] as String;
+                        final name =
+                            person['display_name']?.toString() ?? 'Member';
+                        return CheckboxListTile(
+                          value: selected.contains(id),
+                          onChanged: (checked) => setSheetState(() {
+                            if (checked == true) {
+                              selected.add(id);
+                            } else {
+                              selected.remove(id);
+                            }
+                          }),
+                          contentPadding: EdgeInsets.zero,
+                          secondary: _Avatar(name: name),
+                          title: Text(name),
+                          controlAffinity: ListTileControlAffinity.trailing,
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: selected.isEmpty
+                          ? null
+                          : () =>
+                                Navigator.pop(sheetContext, selected.toList()),
+                      child: Text(
+                        selected.isEmpty
+                            ? 'Select someone'
+                            : 'Add ${selected.length} ${selected.length == 1 ? 'person' : 'people'}',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      if (peopleToAdd == null || peopleToAdd.isEmpty || !mounted) return;
+
+      setState(() => _addingPeople = true);
+      for (final personId in peopleToAdd) {
+        await repo.addConnectionToGallery(_gallery['id'], personId);
+      }
+      await _load();
+      await widget.onChanged();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Added ${peopleToAdd.length} ${peopleToAdd.length == 1 ? 'person' : 'people'} to this Mozaque.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is PostgrestException
+                  ? e.message
+                  : 'Could not add these people. Please try again.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _addingPeople = false);
+    }
+  }
+
   Future<void> _piece(Map<String, dynamic> p, bool value) async {
     try {
       await repo.keepPiece(p['id'], value);
@@ -2813,6 +2951,26 @@ class _GalleryScreenState extends State<GalleryScreen> {
               ],
             ),
             const SizedBox(height: 14),
+            if (owner &&
+                _gallery['audience'] == 'invited' &&
+                _gallery['frozen_at'] == null) ...[
+              OutlinedButton.icon(
+                onPressed: _addingPeople ? null : _addPeople,
+                icon: _addingPeople
+                    ? const SizedBox(
+                        width: 17,
+                        height: 17,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.group_add_outlined),
+                label: Text(
+                  _addingPeople
+                      ? 'Adding people…'
+                      : 'Add people from your circle',
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             if (owner) ...[
               DropdownButtonFormField<String>(
                 value: _gallery['audience'],
