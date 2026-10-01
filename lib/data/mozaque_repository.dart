@@ -253,14 +253,14 @@ class MozaqueRepository {
   }
 
   Future<List<Map<String, dynamic>>>
-  glowNotifications() async => List<Map<String, dynamic>>.from(
+  notifications() async => List<Map<String, dynamic>>.from(
     await db
         .from('notifications')
         .select(
-          'id,actor_name,photo_id,created_at,photos!notifications_photo_id_fkey(id,gallery_id,galleries!photos_gallery_id_fkey(id,title))',
+          'id,kind,actor_name,detail,gallery_id,photo_id,created_at,galleries!notifications_gallery_id_fkey(id,title)',
         )
         .order('created_at', ascending: false)
-        .limit(20),
+        .limit(30),
   );
 
   Future<void> deletePhoto(Map<String, dynamic> photo) async {

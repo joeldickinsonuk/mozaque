@@ -622,7 +622,7 @@ class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
   List<Map<String, dynamic>> _galleries = [],
       _feed = [],
-      _glowNotifications = [],
+      _notifications = [],
       _pieces = [],
       _connections = [];
   Map<String, dynamic>? _profile;
@@ -701,7 +701,7 @@ class _HomeShellState extends State<HomeShell> {
         );
       final g = await repo.galleries();
       final f = await repo.feed();
-      final notifications = await repo.glowNotifications();
+      final notifications = await repo.notifications();
       final pieces = await repo.photos(pieces: true);
       final connections = await repo.connections();
       if (!mounted) return;
@@ -709,7 +709,7 @@ class _HomeShellState extends State<HomeShell> {
         _profile = p;
         _galleries = g;
         _feed = f;
-        _glowNotifications = notifications;
+        _notifications = notifications;
         _pieces = pieces;
         _connections = connections;
         _error = null;
@@ -965,7 +965,7 @@ class _HomeShellState extends State<HomeShell> {
       _FeedPage(
         galleries: _galleries,
         feed: _feed,
-        glowNotifications: _glowNotifications,
+        notifications: _notifications,
         profile: _profile,
         loading: _loading,
         error: _error,
@@ -1144,7 +1144,7 @@ class _FeedPage extends StatelessWidget {
   const _FeedPage({
     required this.galleries,
     required this.feed,
-    required this.glowNotifications,
+    required this.notifications,
     required this.profile,
     required this.loading,
     required this.error,
@@ -1152,7 +1152,7 @@ class _FeedPage extends StatelessWidget {
     required this.onCreate,
     required this.onOpen,
   });
-  final List<Map<String, dynamic>> galleries, feed, glowNotifications;
+  final List<Map<String, dynamic>> galleries, feed, notifications;
   final Map<String, dynamic>? profile;
   final bool loading;
   final String? error;
@@ -1258,33 +1258,9 @@ class _FeedPage extends StatelessWidget {
                         onTap: () => onOpen(g),
                       ),
                     ),
-                    ...glowNotifications.map((notification) {
-                      final actor =
-                          notification['actor_name']?.toString() ?? 'Someone';
-                      final photo =
-                          notification['photos'] as Map<String, dynamic>?;
-                      final gallery =
-                          photo?['galleries'] as Map<String, dynamic>?;
-                      final galleryId = photo?['gallery_id'];
-                      return _TimelineCard(
-                        kind: 'NEW GLOW',
-                        title: '$actor glowed your photo',
-                        detail:
-                            'In ${_presentMozaqueTitle(gallery?['title']?.toString() ?? 'a Mozaque')} · ${_relativeDate(notification['created_at'])}',
-                        icon: Icons.local_fire_department_outlined,
-                        accent: const Color(0xFFE5953D),
-                        onTap: () {
-                          final target = galleries
-                              .where((g) => g['id'] == galleryId)
-                              .firstOrNull;
-                          if (target != null) onOpen(target);
-                        },
-                      );
-                    }),
                     if (echoes.isNotEmpty ||
                         upcoming.isNotEmpty ||
-                        shared.isNotEmpty ||
-                        glowNotifications.isNotEmpty)
+                        shared.isNotEmpty)
                       const SizedBox(height: 18),
                     Row(
                       children: [
@@ -1304,6 +1280,88 @@ class _FeedPage extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 14),
+                    ...notifications.map((notification) {
+                      final actor =
+                          notification['actor_name']?.toString() ?? 'Someone';
+                      final gallery =
+                          notification['galleries'] as Map<String, dynamic>?;
+                      final galleryId = notification['gallery_id'];
+                      final galleryName = _presentMozaqueTitle(
+                        gallery?['title']?.toString() ?? 'a Mozaque',
+                      );
+                      final date = _relativeDate(notification['created_at']);
+                      final detailText =
+                          notification['detail']?.toString() ?? '';
+                      late final String kind, title, detail;
+                      late final IconData icon;
+                      late final Color accent;
+                      switch (notification['kind']) {
+                        case 'glow':
+                          kind = 'NEW GLOW';
+                          title = '$actor glowed your photo';
+                          detail = 'In $galleryName · $date';
+                          icon = Icons.local_fire_department_outlined;
+                          accent = const Color(0xFFE5953D);
+                        case 'member_added':
+                          kind = 'NEW MOZAQUE';
+                          title = 'You were added to a Mozaque';
+                          detail = '$actor added you to “$galleryName” · $date';
+                          icon = Icons.photo_library_outlined;
+                          accent = blue;
+                        case 'member_joined':
+                          kind = 'NEW MEMBER';
+                          title = '$actor joined your Mozaque';
+                          detail = '“$galleryName” · $date';
+                          icon = Icons.people_outline;
+                          accent = const Color(0xFF3A9B8B);
+                        case 'member_role_changed':
+                          kind = 'PERMISSION CHANGED';
+                          title = 'Your photo permission changed';
+                          detail =
+                              '$actor: $detailText in “$galleryName” · $date';
+                          icon = Icons.tune;
+                          accent = const Color(0xFF8B62D8);
+                        case 'gallery_preserved':
+                          kind = 'PRESERVED';
+                          title = '$actor preserved a Mozaque';
+                          detail =
+                              '“$galleryName” is now a lasting memory · $date';
+                          icon = Icons.lock_outline;
+                          accent = const Color(0xFF8B62D8);
+                        case 'gallery_settings_changed':
+                          kind = 'MOZAQUE UPDATED';
+                          title = 'A Mozaque was updated';
+                          detail =
+                              '$actor: $detailText in “$galleryName” · $date';
+                          icon = Icons.edit_outlined;
+                          accent = blue;
+                        case 'connection_added':
+                          kind = 'NEW CONNECTION';
+                          title = '$actor accepted your invitation';
+                          detail = 'You’re now connected on Mozaque · $date';
+                          icon = Icons.person_add_alt_1_outlined;
+                          accent = const Color(0xFF3A9B8B);
+                        default:
+                          kind = 'UPDATE';
+                          title = 'There’s something new';
+                          detail = detailText;
+                          icon = Icons.notifications_none;
+                          accent = blue;
+                      }
+                      return _TimelineCard(
+                        kind: kind,
+                        title: title,
+                        detail: detail,
+                        icon: icon,
+                        accent: accent,
+                        onTap: () {
+                          final target = galleries
+                              .where((g) => g['id'] == galleryId)
+                              .firstOrNull;
+                          if (target != null) onOpen(target);
+                        },
+                      );
+                    }),
                     if (error != null)
                       _ErrorCard(message: error!, onRetry: onRefresh)
                     else if (loading && feed.isEmpty)
