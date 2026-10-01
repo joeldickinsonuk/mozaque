@@ -2858,7 +2858,7 @@ class _MemoryPageState extends State<_MemoryPage> {
           padding: const EdgeInsets.fromLTRB(20, 22, 20, 100),
           children: [
             const Text(
-              'YOUR MOZAQUES',
+              'PRIVATE PHOTO GALLERIES',
               style: TextStyle(
                 color: muted,
                 letterSpacing: 1.5,
@@ -2870,6 +2870,11 @@ class _MemoryPageState extends State<_MemoryPage> {
             const Text(
               'Your Mozaques',
               style: TextStyle(fontFamily: 'serif', fontSize: 34, color: ink),
+            ),
+            const SizedBox(height: 5),
+            const Text(
+              'Each Mozaque is a private gallery for photos you share with your people.',
+              style: TextStyle(color: muted, fontSize: 14, height: 1.4),
             ),
             const SizedBox(height: 18),
             Container(
@@ -2943,7 +2948,10 @@ class _CollectionHeading extends StatelessWidget {
         ),
       ),
       const Spacer(),
-      Text('$count', style: const TextStyle(color: muted, fontSize: 12)),
+      Text(
+        '$count ${count == 1 ? 'gallery' : 'galleries'}',
+        style: const TextStyle(color: muted, fontSize: 12),
+      ),
     ],
   );
 }
@@ -2957,87 +2965,194 @@ class _GalleryCard extends StatelessWidget {
     final color = _colorFor(gallery['title'] as String);
     final coverPath = gallery['cover_storage_path'] as String?;
     return Card(
-      margin: const EdgeInsets.only(bottom: 11),
+      margin: const EdgeInsets.only(bottom: 15),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.all(15),
-          child: Row(
-            children: [
-              if (coverPath != null)
-                SizedBox(
-                  width: 82,
-                  height: 76,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(17),
-                    child: _PhotoImage(path: coverPath, height: 76),
-                  ),
-                )
-              else
-                Container(
-                  width: 82,
-                  height: 76,
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(.12),
-                    borderRadius: BorderRadius.circular(17),
-                  ),
-                  child: Icon(
-                    Icons.photo_library_outlined,
-                    color: color,
-                    size: 28,
-                  ),
-                ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+              child: SizedBox(
+                height: 166,
+                width: double.infinity,
+                child: Stack(
+                  fit: StackFit.expand,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            gallery['title'],
+                    if (coverPath != null)
+                      _PhotoImage(path: coverPath, height: 166)
+                    else
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [color.withOpacity(.88), ink],
+                          ),
+                        ),
+                        child: Stack(
+                          children: [
+                            Positioned(
+                              right: 8,
+                              top: -25,
+                              child: Icon(
+                                Icons.auto_awesome_mosaic,
+                                size: 150,
+                                color: Colors.white.withOpacity(.12),
+                              ),
+                            ),
+                            const Center(
+                              child: Icon(
+                                Icons.photo_library_outlined,
+                                size: 43,
+                                color: Color(0xA6FFFFFF),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color(0x260F172A),
+                            Color(0x00000000),
+                            Color(0xC810172B),
+                          ],
+                          stops: [0, .35, 1],
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 12,
+                      left: 13,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(.27),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(.28),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.photo_library_outlined,
+                              color: Colors.white,
+                              size: 14,
+                            ),
+                            SizedBox(width: 5),
+                            Text(
+                              'PHOTO GALLERY',
+                              style: TextStyle(
+                                color: Colors.white,
+                                letterSpacing: .8,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 16,
+                      right: 16,
+                      bottom: 14,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            gallery['title']?.toString() ?? 'Untitled Mozaque',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 21,
                               fontWeight: FontWeight.w700,
-                              fontSize: 15,
+                              shadows: [
+                                Shadow(color: Color(0x70000000), blurRadius: 9),
+                              ],
                             ),
                           ),
-                        ),
-                        if (gallery['frozen_at'] != null)
-                          const Icon(
-                            Icons.lock_outline,
-                            size: 16,
-                            color: muted,
+                          const SizedBox(height: 3),
+                          Text(
+                            '${_typeLabels[gallery['event_type']] ?? 'Moment'} · ${_shortDate(gallery['event_date'])}',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(.92),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              shadows: const [
+                                Shadow(color: Color(0x70000000), blurRadius: 8),
+                              ],
+                            ),
                           ),
-                      ],
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_typeLabels[gallery['event_type']] ?? 'Moment'} · ${_shortDate(gallery['event_date'])}',
-                      style: const TextStyle(color: muted, fontSize: 12),
-                    ),
-                    const SizedBox(height: 5),
-                    Row(
-                      children: [
-                        const Icon(Icons.lock_outline, size: 13, color: muted),
-                        const SizedBox(width: 4),
-                        Text(
-                          gallery['audience'] == 'connections'
-                              ? 'Shared with connections'
-                              : 'Invite only',
-                          style: const TextStyle(color: muted, fontSize: 11),
-                        ),
-                      ],
+                    const Positioned(
+                      right: 11,
+                      bottom: 13,
+                      child: Icon(
+                        Icons.chevron_right,
+                        color: Colors.white,
+                        size: 24,
+                      ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: muted),
-            ],
-          ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(15, 11, 15, 13),
+              child: Row(
+                children: [
+                  Icon(
+                    gallery['audience'] == 'connections'
+                        ? Icons.people_outline
+                        : Icons.lock_outline,
+                    size: 15,
+                    color: muted,
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      gallery['audience'] == 'connections'
+                          ? 'Private · Shared with your connections'
+                          : 'Private · People you invite',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: muted, fontSize: 12),
+                    ),
+                  ),
+                  if (gallery['frozen_at'] != null) ...[
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.lock_clock_outlined,
+                      size: 15,
+                      color: muted,
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'Preserved',
+                      style: TextStyle(color: muted, fontSize: 11),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
