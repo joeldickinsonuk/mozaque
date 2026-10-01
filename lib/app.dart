@@ -745,8 +745,8 @@ class _AttentionNavIconState extends State<_AttentionNavIcon>
 class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
   Map<String, dynamic>? _activeGallery;
-  int _feedPulse = 0, _mozaquesPulse = 0;
-  bool _hasNewFeed = false, _hasNewMozaques = false;
+  int _feedPulse = 0, _mozaquesPulse = 0, _piecesPulse = 0;
+  bool _hasNewFeed = false, _hasNewMozaques = false, _hasNewPieces = false;
   List<Map<String, dynamic>> _galleries = [],
       _feed = [],
       _notifications = [],
@@ -850,6 +850,10 @@ class _HomeShellState extends State<HomeShell> {
           _mozaquesPulse++;
           _hasNewMozaques = _tab != 3;
         }
+        if (attention.pieces) {
+          _piecesPulse++;
+          _hasNewPieces = true;
+        }
         _error = null;
       });
     } catch (e) {
@@ -859,17 +863,20 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
-  Future<({bool feed, bool mozaques})> _checkForNewItems(
+  Future<({bool feed, bool mozaques, bool pieces})> _checkForNewItems(
     String userId,
     List<Map<String, dynamic>> feed,
     List<Map<String, dynamic>> notifications,
     List<Map<String, dynamic>> galleries,
   ) async {
-    if (userId.isEmpty) return (feed: false, mozaques: false);
+    if (userId.isEmpty) {
+      return (feed: false, mozaques: false, pieces: false);
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final feedKey = 'mozaque_seen_feed_$userId';
       final galleryKey = 'mozaque_seen_shared_galleries_$userId';
+      final piecesKey = 'mozaque_unseen_pieces_$userId';
       final latest = _latestActivityMillis([...feed, ...notifications]);
       final savedLatest = prefs.getInt(feedKey);
       final sharedIds = galleries
@@ -889,13 +896,16 @@ class _HomeShellState extends State<HomeShell> {
       if (savedIds == null || _tab == 1) {
         await prefs.setStringList(galleryKey, sharedIds.toList());
       }
+      final newPieces = _tab != 2 && (prefs.getBool(piecesKey) ?? false);
+      if (_tab == 2) await prefs.setBool(piecesKey, false);
       return (
         feed: newFeed && (_tab == 0 || !_hasNewFeed),
         mozaques: newMozaques && (_tab == 1 || !_hasNewMozaques),
+        pieces: newPieces && !_hasNewPieces,
       );
     } catch (_) {
       // Attention cues are best-effort; they must never prevent a feed refresh.
-      return (feed: false, mozaques: false);
+      return (feed: false, mozaques: false, pieces: false);
     }
   }
 
@@ -929,7 +939,28 @@ class _HomeShellState extends State<HomeShell> {
           'mozaque_seen_shared_galleries_$userId',
           ids.toList(),
         );
+      } else if (index == 2) {
+        await prefs.setBool('mozaque_unseen_pieces_$userId', false);
       }
+    } catch (_) {}
+  }
+
+  Future<void> _recordKeptPiece() async {
+    final userId = _db.auth.currentUser?.id ?? '';
+    if (userId.isEmpty) return;
+    if (_tab == 2) {
+      await _markTabSeen(2);
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _hasNewPieces = true;
+        _piecesPulse++;
+      });
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('mozaque_unseen_pieces_$userId', true);
     } catch (_) {}
   }
 
@@ -939,6 +970,7 @@ class _HomeShellState extends State<HomeShell> {
       _activeGallery = null;
       if (index == 0) _hasNewFeed = false;
       if (index == 1) _hasNewMozaques = false;
+      if (index == 2) _hasNewPieces = false;
     });
     unawaited(_markTabSeen(index));
   }
@@ -1480,6 +1512,7 @@ class _HomeShellState extends State<HomeShell> {
         onRefresh: _load,
         onCreate: _create,
         onOpen: _openGallery,
+        onPieceKept: _recordKeptPiece,
       ),
       _MemoryPage(
         galleries: _galleries,
@@ -1529,6 +1562,7 @@ class _HomeShellState extends State<HomeShell> {
                             _invite(galleryId: _activeGallery!['id']),
                         onChanged: _load,
                         onBack: _closeGallery,
+                        onPieceKept: _recordKeptPiece,
                       ),
               ),
             ],
@@ -1565,8 +1599,16 @@ class _HomeShellState extends State<HomeShell> {
               label: 'Mozaques',
             ),
             NavigationDestination(
-              icon: Icon(Icons.bookmark_border),
-              selectedIcon: Icon(Icons.bookmark),
+              icon: _AttentionNavIcon(
+                icon: Icons.bookmark_border,
+                pulseToken: _piecesPulse,
+                hasNew: _hasNewPieces,
+              ),
+              selectedIcon: _AttentionNavIcon(
+                icon: Icons.bookmark,
+                pulseToken: _piecesPulse,
+                hasNew: _hasNewPieces,
+              ),
               label: 'Pieces',
             ),
             NavigationDestination(
@@ -1706,6 +1748,7 @@ class _FeedPage extends StatelessWidget {
     required this.onRefresh,
     required this.onCreate,
     required this.onOpen,
+    required this.onPieceKept,
   });
   final List<Map<String, dynamic>> galleries, feed, notifications;
   final Map<String, dynamic>? profile;
@@ -1714,6 +1757,7 @@ class _FeedPage extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final VoidCallback onCreate;
   final ValueChanged<Map<String, dynamic>> onOpen;
+  final Future<void> Function() onPieceKept;
   @override
   Widget build(BuildContext context) {
     final name =
@@ -1960,6 +2004,7 @@ class _FeedPage extends StatelessWidget {
                             if (g != null) onOpen(g);
                           },
                           onRefresh: onRefresh,
+                          onPieceKept: onPieceKept,
                         ),
                       ),
                   ],
@@ -2228,10 +2273,12 @@ class _PhotoCard extends StatefulWidget {
     required this.photo,
     required this.onGallery,
     required this.onRefresh,
+    this.onPieceKept,
   });
   final Map<String, dynamic> photo;
   final VoidCallback onGallery;
   final Future<void> Function() onRefresh;
+  final Future<void> Function()? onPieceKept;
   @override
   State<_PhotoCard> createState() => _PhotoCardState();
 }
@@ -2261,6 +2308,9 @@ class _PhotoCardState extends State<_PhotoCard> {
         await repo.glow(widget.photo['id'], active);
       }
       if (!mounted) return;
+      if (table == 'piece' && active) {
+        await widget.onPieceKept?.call();
+      }
       final current = _updatedPhoto ?? widget.photo;
       setState(() {
         _updatedPhoto = {
@@ -3662,11 +3712,13 @@ class GalleryScreen extends StatefulWidget {
     required this.onInvite,
     required this.onChanged,
     required this.onBack,
+    required this.onPieceKept,
   });
   final Map<String, dynamic> gallery;
   final VoidCallback onInvite;
   final Future<void> Function() onChanged;
   final VoidCallback onBack;
+  final Future<void> Function() onPieceKept;
   @override
   State<GalleryScreen> createState() => _GalleryScreenState();
 }
@@ -4035,6 +4087,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   Future<void> _piece(Map<String, dynamic> p, bool value) async {
     try {
       await repo.keepPiece(p['id'], value);
+      if (value) await widget.onPieceKept();
       await _load();
     } catch (e) {
       if (mounted)
