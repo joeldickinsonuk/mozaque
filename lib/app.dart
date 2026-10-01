@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'data/mozaque_repository.dart';
 import 'theme.dart';
 
@@ -22,7 +23,7 @@ const _typeLabels = {
   'other': 'Another moment',
 };
 
-enum _InviteAction { copy, share }
+enum _InviteAction { copy, share, email }
 
 class MozaqueApp extends StatelessWidget {
   const MozaqueApp({super.key, required this.configured});
@@ -1102,6 +1103,12 @@ class _HomeShellState extends State<HomeShell> {
               icon: const Icon(Icons.copy_outlined),
               label: const Text('Copy invite'),
             ),
+            OutlinedButton.icon(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, _InviteAction.email),
+              icon: const Icon(Icons.email_outlined),
+              label: const Text('Email invite'),
+            ),
             FilledButton.icon(
               onPressed: () =>
                   Navigator.pop(dialogContext, _InviteAction.share),
@@ -1115,6 +1122,78 @@ class _HomeShellState extends State<HomeShell> {
       if (action == _InviteAction.copy) {
         await Clipboard.setData(ClipboardData(text: message));
         _notice('Invitation copied. Paste it into a message or email.');
+      } else if (action == _InviteAction.email) {
+        final emailController = TextEditingController();
+        final formKey = GlobalKey<FormState>();
+        final email = await showDialog<String>(
+          context: context,
+          builder: (emailContext) => AlertDialog(
+            title: const Text('Email invitation'),
+            content: Form(
+              key: formKey,
+              child: TextFormField(
+                controller: emailController,
+                autofocus: true,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(
+                  labelText: 'Email address',
+                  hintText: 'name@example.com',
+                ),
+                validator: (value) {
+                  final address = value?.trim() ?? '';
+                  return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(address)
+                      ? null
+                      : 'Enter a valid email address';
+                },
+                onFieldSubmitted: (_) {
+                  if (formKey.currentState?.validate() ?? false) {
+                    Navigator.pop(emailContext, emailController.text.trim());
+                  }
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(emailContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (formKey.currentState?.validate() ?? false) {
+                    Navigator.pop(emailContext, emailController.text.trim());
+                  }
+                },
+                child: const Text('Continue to email'),
+              ),
+            ],
+          ),
+        );
+        emailController.dispose();
+        if (email == null || !mounted) return;
+        final mailto = Uri(
+          scheme: 'mailto',
+          path: email,
+          queryParameters: {'subject': subject, 'body': message},
+        );
+        try {
+          final opened = await launchUrl(
+            mailto,
+            mode: LaunchMode.externalApplication,
+          );
+          if (!opened) throw StateError('No email app is available.');
+        } catch (_) {
+          try {
+            await SharePlus.instance.share(
+              ShareParams(subject: subject, text: 'To: $email\n\n$message'),
+            );
+          } catch (_) {
+            await Clipboard.setData(
+              ClipboardData(text: 'To: $email\n\n$subject\n\n$message'),
+            );
+            _notice('Invite copied. Paste it into an email to $email.');
+          }
+        }
       } else {
         try {
           await SharePlus.instance.share(
