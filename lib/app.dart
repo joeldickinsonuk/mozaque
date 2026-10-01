@@ -3785,6 +3785,27 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
   }
 
+  Future<void> _showPhotoNotes(Map<String, dynamic> photo) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: .82,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+          child: _ConversationPanel(
+            galleryId: _gallery['id'] as String,
+            photoId: photo['id'] as String,
+            galleryTitle: _gallery['title']?.toString() ?? 'this Mozaque',
+            galleryOwner: _gallery['owner_id'] == _db.auth.currentUser?.id,
+            readOnly: _gallery['frozen_at'] != null,
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _preserve() async {
     final yes = await showDialog<bool>(
       context: context,
@@ -4502,6 +4523,16 @@ class _GalleryScreenState extends State<GalleryScreen> {
                   ),
                 ],
                 const SizedBox(height: 16),
+                SizedBox(
+                  height: 370,
+                  child: _ConversationPanel(
+                    galleryId: _gallery['id'] as String,
+                    galleryTitle: title,
+                    galleryOwner: owner,
+                    readOnly: _gallery['frozen_at'] != null,
+                  ),
+                ),
+                const SizedBox(height: 18),
                 Row(
                   children: [
                     Expanded(
@@ -4561,6 +4592,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       photo: p,
                       onGlow: (value) => _glow(p, value),
                       onPiece: (v) => _piece(p, v),
+                      onNotes: () => _showPhotoNotes(p),
                       isCover: p['id'] == _gallery['cover_photo_id'],
                       canSetCover: owner && _gallery['frozen_at'] == null,
                       onSetCover: () => _setCover(p['id'] as String),
@@ -4577,11 +4609,278 @@ class _GalleryScreenState extends State<GalleryScreen> {
   }
 }
 
+class _ConversationPanel extends StatefulWidget {
+  const _ConversationPanel({
+    required this.galleryId,
+    required this.galleryTitle,
+    required this.galleryOwner,
+    required this.readOnly,
+    this.photoId,
+  });
+
+  final String galleryId, galleryTitle;
+  final String? photoId;
+  final bool galleryOwner, readOnly;
+
+  @override
+  State<_ConversationPanel> createState() => _ConversationPanelState();
+}
+
+class _ConversationPanelState extends State<_ConversationPanel> {
+  final _controller = TextEditingController();
+  List<Map<String, dynamic>> _entries = [];
+  bool _loading = true, _posting = false;
+  String? _error;
+
+  bool get _isPhotoNote => widget.photoId != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final entries = _isPhotoNote
+          ? await repo.photoNotes(widget.photoId!)
+          : await repo.guestbookEntries(widget.galleryId);
+      if (!mounted) return;
+      setState(() {
+        _entries = entries;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = _friendlyConversationError(e));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _post() async {
+    final body = _controller.text.trim();
+    if (body.isEmpty || _posting) return;
+    setState(() => _posting = true);
+    try {
+      if (_isPhotoNote) {
+        await repo.addPhotoNote(widget.photoId!, body);
+      } else {
+        await repo.addGuestbookEntry(widget.galleryId, body);
+      }
+      _controller.clear();
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlyConversationError(e))));
+      }
+    } finally {
+      if (mounted) setState(() => _posting = false);
+    }
+  }
+
+  Future<void> _delete(Map<String, dynamic> entry) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove this message?'),
+        content: const Text('It will disappear for everyone in this Mozaque.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep it'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      if (_isPhotoNote) {
+        await repo.deletePhotoNote(entry['id'] as String);
+      } else {
+        await repo.deleteGuestbookEntry(entry['id'] as String);
+      }
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlyConversationError(e))));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final userId = _db.auth.currentUser?.id;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          _isPhotoNote ? 'Notes on this photo' : 'Guestbook',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: ink,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          _isPhotoNote
+              ? 'A little context on “${widget.galleryTitle}”. Only people in this Mozaque can read it.'
+              : 'Birthday wishes, wedding notes and family stories. Only people in this Mozaque can read these.',
+          style: const TextStyle(color: muted, fontSize: 12, height: 1.35),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _loading && _entries.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null && _entries.isEmpty
+              ? Center(
+                  child: Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: muted),
+                  ),
+                )
+              : _entries.isEmpty
+              ? Center(
+                  child: Text(
+                    _isPhotoNote
+                        ? 'Add the first note to this memory.'
+                        : 'Leave the first message in this Mozaque.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: muted),
+                  ),
+                )
+              : ListView.separated(
+                  itemCount: _entries.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final entry = _entries[index];
+                    final profile = entry['profiles'] as Map<String, dynamic>?;
+                    final author =
+                        profile?['display_name']?.toString() ?? 'Someone';
+                    final canDelete =
+                        !widget.readOnly &&
+                        (entry['author_id'] == userId || widget.galleryOwner);
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _Avatar(
+                            name: author,
+                            path: profile?['avatar_path'] as String?,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '$author · ${_relativeDate(entry['created_at'])}',
+                                  style: const TextStyle(
+                                    color: muted,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  entry['body'] as String,
+                                  style: const TextStyle(
+                                    color: ink,
+                                    fontSize: 14,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (canDelete)
+                            IconButton(
+                              tooltip: 'Remove message',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _delete(entry),
+                              icon: const Icon(Icons.delete_outline, size: 19),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+        const SizedBox(height: 7),
+        if (widget.readOnly)
+          const Text(
+            'This Mozaque has been preserved. Messages are read-only.',
+            style: TextStyle(color: muted, fontSize: 12),
+          )
+        else
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  maxLength: 1000,
+                  minLines: 1,
+                  maxLines: 3,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    hintText: _isPhotoNote
+                        ? 'Add a note about this moment…'
+                        : 'Leave a message…',
+                    counterText: '',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onSubmitted: (_) => _post(),
+                ),
+              ),
+              const SizedBox(width: 7),
+              IconButton.filled(
+                tooltip: 'Post message',
+                onPressed: _posting ? null : _post,
+                icon: _posting
+                    ? const SizedBox(
+                        width: 17,
+                        height: 17,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send_outlined),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+String _friendlyConversationError(Object error) => error is PostgrestException
+    ? error.message
+    : 'Could not load or save this message. Please try again.';
+
 class _GalleryPhoto extends StatefulWidget {
   const _GalleryPhoto({
     required this.photo,
     required this.onGlow,
     required this.onPiece,
+    required this.onNotes,
     required this.isCover,
     required this.canSetCover,
     required this.onSetCover,
@@ -4591,6 +4890,7 @@ class _GalleryPhoto extends StatefulWidget {
   final Map<String, dynamic> photo;
   final Future<void> Function(bool) onGlow;
   final Future<void> Function(bool) onPiece;
+  final VoidCallback onNotes;
   final bool isCover, canSetCover;
   final VoidCallback onSetCover;
   final bool canDelete;
@@ -4667,6 +4967,11 @@ class _GalleryPhotoState extends State<_GalleryPhoto> {
             spacing: 2,
             runSpacing: 0,
             children: [
+              TextButton.icon(
+                onPressed: widget.onNotes,
+                icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                label: const Text('Notes'),
+              ),
               TextButton.icon(
                 style: TextButton.styleFrom(
                   minimumSize: const Size(48, 48),

@@ -193,6 +193,44 @@ class MozaqueRepository {
     return result;
   }
 
+  Future<List<Map<String, dynamic>>> photoNotes(
+    String photoId,
+  ) async => List<Map<String, dynamic>>.from(
+    await db
+        .from('photo_notes')
+        .select(
+          'id,photo_id,author_id,body,created_at,profiles!photo_notes_author_id_fkey(display_name,avatar_path)',
+        )
+        .eq('photo_id', photoId)
+        .order('created_at'),
+  );
+
+  Future<List<Map<String, dynamic>>> guestbookEntries(
+    String galleryId,
+  ) async => List<Map<String, dynamic>>.from(
+    await db
+        .from('guestbook_entries')
+        .select(
+          'id,gallery_id,author_id,body,created_at,profiles!guestbook_entries_author_id_fkey(display_name,avatar_path)',
+        )
+        .eq('gallery_id', galleryId)
+        .order('created_at'),
+  );
+
+  Future<void> addPhotoNote(String photoId, String body) async => db
+      .from('photo_notes')
+      .insert({'photo_id': photoId, 'author_id': uid, 'body': body.trim()});
+
+  Future<void> addGuestbookEntry(String galleryId, String body) async => db
+      .from('guestbook_entries')
+      .insert({'gallery_id': galleryId, 'author_id': uid, 'body': body.trim()});
+
+  Future<void> deletePhotoNote(String id) async =>
+      db.from('photo_notes').delete().eq('id', id);
+
+  Future<void> deleteGuestbookEntry(String id) async =>
+      db.from('guestbook_entries').delete().eq('id', id);
+
   Future<String> photoUrl(String path) =>
       db.storage.from('mozaque-photos').createSignedUrl(path, 3600);
   Future<List<Map<String, dynamic>>> feed() => photos();
