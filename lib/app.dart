@@ -5711,36 +5711,89 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       tilePadding: const EdgeInsets.symmetric(horizontal: 16),
                       childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                       children: [
-                        SwitchListTile.adaptive(
-                          contentPadding: EdgeInsets.zero,
-                          value: _isPublic,
-                          title: const Text('Show on my public profile'),
-                          subtitle: Text(
-                            _isPublic
-                                ? 'Anyone with your personal link can view its details and photos. Visitors can’t comment, Glow, or keep Pieces.'
-                                : 'Private by default. Turn this on to show the Mozaque on your public profile.',
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 18),
+                          padding: const EdgeInsets.fromLTRB(14, 13, 10, 13),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF7F8FC),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFE4E7F0)),
                           ),
-                          onChanged: _setPublic,
+                          child: Row(
+                            children: [
+                              const Icon(Icons.public_outlined, color: blue),
+                              const SizedBox(width: 11),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Public profile',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: ink,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _isPublic
+                                          ? 'Public. Anyone with your personal link can view these details and photos. Visitors can’t comment, Glow, or keep Pieces. Other public Mozaques stay public too.'
+                                          : 'Private. Turn on to let anyone with your personal link view these details and photos. Visitors can’t comment, Glow, or keep Pieces.',
+                                      style: const TextStyle(
+                                        color: muted,
+                                        fontSize: 12,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Switch.adaptive(
+                                value: _isPublic,
+                                onChanged: _setPublic,
+                                activeColor: blue,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: EdgeInsets.only(bottom: 7),
+                            child: Text(
+                              'MEMBER ACCESS',
+                              style: TextStyle(
+                                color: muted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: .8,
+                              ),
+                            ),
+                          ),
                         ),
                         if (_gallery['audience'] == 'invited' &&
                             _gallery['frozen_at'] == null)
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: OutlinedButton.icon(
-                              onPressed: _addingPeople ? null : _addPeople,
-                              icon: _addingPeople
-                                  ? const SizedBox(
-                                      width: 17,
-                                      height: 17,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.group_add_outlined),
-                              label: Text(
-                                _addingPeople
-                                    ? 'Adding people…'
-                                    : 'Add people from your circle',
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: _addingPeople ? null : _addPeople,
+                                icon: _addingPeople
+                                    ? const SizedBox(
+                                        width: 17,
+                                        height: 17,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.group_add_outlined),
+                                label: Text(
+                                  _addingPeople
+                                      ? 'Adding people…'
+                                      : 'Add people from your circle',
+                                ),
                               ),
                             ),
                           ),
@@ -5766,7 +5819,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                 }
                               : null,
                         ),
-                        const SizedBox(height: 9),
+                        const SizedBox(height: 14),
                         DropdownButtonFormField<String>(
                           value: _gallery['upload_policy'],
                           decoration: const InputDecoration(
@@ -5795,6 +5848,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                         ),
                         if (_gallery['upload_policy'] == 'selected' &&
                             _members.isNotEmpty) ...[
+                          const Divider(height: 25),
                           const Padding(
                             padding: EdgeInsets.only(top: 12, bottom: 4),
                             child: Align(
