@@ -2624,49 +2624,66 @@ class _PiecesPage extends StatelessWidget {
   Widget build(BuildContext context) => RefreshIndicator(
     onRefresh: onRefresh,
     child: ListView(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 100),
+      padding: const EdgeInsets.fromLTRB(0, 22, 0, 100),
       children: [
-        const Text(
-          'YOUR PERSONAL COLLECTION',
-          style: TextStyle(
-            color: muted,
-            letterSpacing: 1.5,
-            fontWeight: FontWeight.w700,
-            fontSize: 11,
-          ),
-        ),
-        const SizedBox(height: 7),
-        const Text(
-          'My Pieces',
-          style: TextStyle(fontFamily: 'serif', fontSize: 34, color: ink),
-        ),
-        const SizedBox(height: 5),
-        const Text(
-          'The moments you’ve kept, gathered in one place.',
-          style: TextStyle(color: muted),
-        ),
-        const SizedBox(height: 17),
-        if (photos.isEmpty)
-          _EmptyCard(
-            icon: Icons.bookmark_border,
-            title: 'Keep a piece',
-            copy: 'Save a photo from any Mozaque and find it here.',
-            onAction: onRefresh,
-            action: loading ? 'Loading…' : 'Refresh',
-          )
-        else
-          ...photos.map(
-            (p) => _PhotoCard(
-              photo: p,
-              onGallery: () {
-                final g = galleries
-                    .where((g) => g['id'] == p['gallery_id'])
-                    .firstOrNull;
-                if (g != null) onOpenGallery(g);
-              },
-              onRefresh: onRefresh,
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1040),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'YOUR PERSONAL COLLECTION',
+                    style: TextStyle(
+                      color: muted,
+                      letterSpacing: 1.5,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  const Text(
+                    'My Pieces',
+                    style: TextStyle(
+                      fontFamily: 'serif',
+                      fontSize: 34,
+                      color: ink,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'The moments you’ve kept, gathered in one place.',
+                    style: TextStyle(color: muted),
+                  ),
+                  const SizedBox(height: 17),
+                  if (photos.isEmpty)
+                    _EmptyCard(
+                      icon: Icons.bookmark_border,
+                      title: 'Keep a piece',
+                      copy: 'Save a photo from any Mozaque and find it here.',
+                      onAction: onRefresh,
+                      action: loading ? 'Loading…' : 'Refresh',
+                    )
+                  else
+                    ...photos.map(
+                      (p) => _PhotoCard(
+                        photo: p,
+                        onGallery: () {
+                          final g = galleries
+                              .where((g) => g['id'] == p['gallery_id'])
+                              .firstOrNull;
+                          if (g != null) onOpenGallery(g);
+                        },
+                        onRefresh: onRefresh,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
+        ),
       ],
     ),
   );
@@ -2688,69 +2705,86 @@ class _ConnectionsPage extends StatelessWidget {
   Widget build(BuildContext context) => RefreshIndicator(
     onRefresh: onRefresh,
     child: ListView(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 100),
+      padding: const EdgeInsets.fromLTRB(0, 22, 0, 100),
       children: [
-        const Text(
-          'YOUR CIRCLE',
-          style: TextStyle(
-            color: muted,
-            letterSpacing: 1.5,
-            fontWeight: FontWeight.w700,
-            fontSize: 11,
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 820),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'YOUR CIRCLE',
+                    style: TextStyle(
+                      color: muted,
+                      letterSpacing: 1.5,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  const Text(
+                    'People you share with',
+                    style: TextStyle(
+                      fontFamily: 'serif',
+                      fontSize: 31,
+                      color: ink,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Connections are private. No followers or public profiles.',
+                    style: TextStyle(color: muted),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: onInvite,
+                          icon: const Icon(Icons.person_add_alt_1),
+                          label: const Text('Invite someone'),
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: onJoin,
+                          icon: const Icon(Icons.key_outlined),
+                          label: const Text('Join with code'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 15),
+                  if (connections.isEmpty)
+                    _EmptyCard(
+                      icon: Icons.people_outline,
+                      title: 'Your circle starts here',
+                      copy: 'Invite someone you know to connect on Mozaque.',
+                      action: 'Invite someone',
+                      onAction: onInvite,
+                    )
+                  else
+                    ...connections.map(
+                      (c) => ListTile(
+                        onTap: () => onOpenProfile(c),
+                        leading: _Avatar(
+                          name: c['display_name'] ?? '?',
+                          path: c['avatar_path'] as String?,
+                        ),
+                        title: Text(c['display_name'] ?? 'Mozaque member'),
+                        subtitle: const Text('Connected privately'),
+                        trailing: const Icon(Icons.chevron_right, color: muted),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
-        const SizedBox(height: 7),
-        const Text(
-          'People you share with',
-          style: TextStyle(fontFamily: 'serif', fontSize: 31, color: ink),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Connections are private. No followers or public profiles.',
-          style: TextStyle(color: muted),
-        ),
-        const SizedBox(height: 20),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: onInvite,
-                icon: const Icon(Icons.person_add_alt_1),
-                label: const Text('Invite someone'),
-              ),
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: onJoin,
-                icon: const Icon(Icons.key_outlined),
-                label: const Text('Join with code'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 15),
-        if (connections.isEmpty)
-          _EmptyCard(
-            icon: Icons.people_outline,
-            title: 'Your circle starts here',
-            copy: 'Invite someone you know to connect on Mozaque.',
-            action: 'Invite someone',
-            onAction: onInvite,
-          )
-        else
-          ...connections.map(
-            (c) => ListTile(
-              onTap: () => onOpenProfile(c),
-              leading: _Avatar(
-                name: c['display_name'] ?? '?',
-                path: c['avatar_path'] as String?,
-              ),
-              title: Text(c['display_name'] ?? 'Mozaque member'),
-              subtitle: const Text('Connected privately'),
-              trailing: const Icon(Icons.chevron_right, color: muted),
-            ),
-          ),
       ],
     ),
   );
