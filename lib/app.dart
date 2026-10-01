@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'data/mozaque_repository.dart';
 import 'theme.dart';
@@ -618,8 +619,134 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
+class _AttentionNavIcon extends StatefulWidget {
+  const _AttentionNavIcon({
+    required this.icon,
+    required this.pulseToken,
+    required this.hasNew,
+  });
+
+  final IconData icon;
+  final int pulseToken;
+  final bool hasNew;
+
+  @override
+  State<_AttentionNavIcon> createState() => _AttentionNavIconState();
+}
+
+class _AttentionNavIconState extends State<_AttentionNavIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 850),
+  );
+
+  @override
+  void didUpdateWidget(covariant _AttentionNavIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pulseToken != oldWidget.pulseToken) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final baseColor = IconTheme.of(context).color ?? ink;
+    final scale = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1, end: 1.35), weight: 18),
+      TweenSequenceItem(tween: Tween(begin: 1.35, end: .92), weight: 18),
+      TweenSequenceItem(tween: Tween(begin: .92, end: 1.16), weight: 22),
+      TweenSequenceItem(tween: Tween(begin: 1.16, end: 1), weight: 42),
+    ]).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    final rotation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0, end: -.12), weight: 20),
+      TweenSequenceItem(tween: Tween(begin: -.12, end: .10), weight: 25),
+      TweenSequenceItem(tween: Tween(begin: .10, end: 0), weight: 55),
+    ]).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    final flash = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0, end: 1), weight: 28),
+      TweenSequenceItem(tween: Tween(begin: 1, end: 0), weight: 72),
+    ]).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+
+    return SizedBox(
+      width: 38,
+      height: 32,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) => Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Transform.rotate(
+              angle: rotation.value,
+              child: Transform.scale(
+                scale: scale.value,
+                child: Icon(
+                  widget.icon,
+                  color: Color.lerp(
+                    baseColor,
+                    const Color(0xFFE3A82C),
+                    flash.value,
+                  ),
+                ),
+              ),
+            ),
+            if (_controller.value > .05 && _controller.value < .72)
+              Positioned(
+                top: -3,
+                right: 0,
+                child: Opacity(
+                  opacity: (1 - _controller.value).clamp(0, 1),
+                  child: const Icon(
+                    Icons.auto_awesome,
+                    size: 13,
+                    color: Color(0xFFE3A82C),
+                  ),
+                ),
+              ),
+            if (widget.hasNew)
+              Positioned(
+                right: -9,
+                top: -5,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE3A82C),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: paper, width: 1.5),
+                  ),
+                  child: const Text(
+                    'NEW',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 7,
+                      height: 1,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: .2,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
+  int _feedPulse = 0, _mozaquesPulse = 0;
+  bool _hasNewFeed = false, _hasNewMozaques = false;
   List<Map<String, dynamic>> _galleries = [],
       _feed = [],
       _notifications = [],
@@ -705,6 +832,9 @@ class _HomeShellState extends State<HomeShell> {
       final pieces = await repo.photos(pieces: true);
       final connections = await repo.connections();
       if (!mounted) return;
+      final userId = _db.auth.currentUser?.id ?? '';
+      final attention = await _checkForNewItems(userId, f, notifications, g);
+      if (!mounted) return;
       setState(() {
         _profile = p;
         _galleries = g;
@@ -712,6 +842,14 @@ class _HomeShellState extends State<HomeShell> {
         _notifications = notifications;
         _pieces = pieces;
         _connections = connections;
+        if (attention.feed) {
+          _feedPulse++;
+          _hasNewFeed = _tab != 0;
+        }
+        if (attention.mozaques) {
+          _mozaquesPulse++;
+          _hasNewMozaques = _tab != 3;
+        }
         _error = null;
       });
     } catch (e) {
@@ -719,6 +857,89 @@ class _HomeShellState extends State<HomeShell> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<({bool feed, bool mozaques})> _checkForNewItems(
+    String userId,
+    List<Map<String, dynamic>> feed,
+    List<Map<String, dynamic>> notifications,
+    List<Map<String, dynamic>> galleries,
+  ) async {
+    if (userId.isEmpty) return (feed: false, mozaques: false);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final feedKey = 'mozaque_seen_feed_$userId';
+      final galleryKey = 'mozaque_seen_shared_galleries_$userId';
+      final latest = _latestActivityMillis([...feed, ...notifications]);
+      final savedLatest = prefs.getInt(feedKey);
+      final sharedIds = galleries
+          .where((g) => g['owner_id']?.toString() != userId)
+          .map((g) => g['id'].toString())
+          .toSet();
+      final savedIds = prefs.getStringList(galleryKey);
+      final newFeed = savedLatest != null && latest > savedLatest;
+      final newMozaques =
+          savedIds != null && sharedIds.any((id) => !savedIds.contains(id));
+
+      // The first visit establishes a baseline. Opening the relevant tab marks
+      // everything currently visible as seen, including on a later refresh.
+      if (savedLatest == null || _tab == 0) {
+        await prefs.setInt(feedKey, latest);
+      }
+      if (savedIds == null || _tab == 3) {
+        await prefs.setStringList(galleryKey, sharedIds.toList());
+      }
+      return (
+        feed: newFeed && (_tab == 0 || !_hasNewFeed),
+        mozaques: newMozaques && (_tab == 3 || !_hasNewMozaques),
+      );
+    } catch (_) {
+      // Attention cues are best-effort; they must never prevent a feed refresh.
+      return (feed: false, mozaques: false);
+    }
+  }
+
+  int _latestActivityMillis(List<Map<String, dynamic>> items) {
+    var latest = 0;
+    for (final item in items) {
+      final value = DateTime.tryParse(item['created_at']?.toString() ?? '');
+      if (value != null && value.millisecondsSinceEpoch > latest) {
+        latest = value.millisecondsSinceEpoch;
+      }
+    }
+    return latest;
+  }
+
+  Future<void> _markTabSeen(int index) async {
+    final userId = _db.auth.currentUser?.id ?? '';
+    if (userId.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (index == 0) {
+        await prefs.setInt(
+          'mozaque_seen_feed_$userId',
+          _latestActivityMillis([..._feed, ..._notifications]),
+        );
+      } else if (index == 3) {
+        final ids = _galleries
+            .where((g) => g['owner_id']?.toString() != userId)
+            .map((g) => g['id'].toString())
+            .toSet();
+        await prefs.setStringList(
+          'mozaque_seen_shared_galleries_$userId',
+          ids.toList(),
+        );
+      }
+    } catch (_) {}
+  }
+
+  void _selectTab(int index) {
+    setState(() {
+      _tab = index;
+      if (index == 0) _hasNewFeed = false;
+      if (index == 3) _hasNewMozaques = false;
+    });
+    unawaited(_markTabSeen(index));
   }
 
   String _message(Object e) => e is PostgrestException
@@ -1005,11 +1226,19 @@ class _HomeShellState extends State<HomeShell> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
+        onDestinationSelected: _selectTab,
+        destinations: [
           NavigationDestination(
-            icon: Icon(Icons.dynamic_feed_outlined),
-            selectedIcon: Icon(Icons.dynamic_feed),
+            icon: _AttentionNavIcon(
+              icon: Icons.dynamic_feed_outlined,
+              pulseToken: _feedPulse,
+              hasNew: _hasNewFeed,
+            ),
+            selectedIcon: _AttentionNavIcon(
+              icon: Icons.dynamic_feed,
+              pulseToken: _feedPulse,
+              hasNew: _hasNewFeed,
+            ),
             label: 'Feed',
           ),
           NavigationDestination(
@@ -1023,8 +1252,16 @@ class _HomeShellState extends State<HomeShell> {
             label: 'People',
           ),
           NavigationDestination(
-            icon: Icon(Icons.photo_library_outlined),
-            selectedIcon: Icon(Icons.photo_library),
+            icon: _AttentionNavIcon(
+              icon: Icons.photo_library_outlined,
+              pulseToken: _mozaquesPulse,
+              hasNew: _hasNewMozaques,
+            ),
+            selectedIcon: _AttentionNavIcon(
+              icon: Icons.photo_library,
+              pulseToken: _mozaquesPulse,
+              hasNew: _hasNewMozaques,
+            ),
             label: 'Mozaques',
           ),
         ],
