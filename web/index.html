@@ -16,6 +16,15 @@
   -->
   <base href="$FLUTTER_BASE_HREF">
 
+  <script>
+    // Preserve old GitHub Pages invite links after moving the app to its domain.
+    if (location.hostname === 'joeldickinsonuk.github.io' &&
+        (location.pathname === '/mozaque' || location.pathname.startsWith('/mozaque/'))) {
+      const appPath = location.pathname.slice('/mozaque'.length) || '/';
+      location.replace('https://mozaque.com' + appPath + location.search + location.hash);
+    }
+  </script>
+
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Private photo sharing for the people who were there. Create a Mozaque, share moments, and keep them close.">

@@ -7,8 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// A live, cross-platform entry point for invitations. Native app links will
 /// replace this only after iOS and Android association files are configured.
 String mozaqueInviteLink(String code) => Uri.https(
-  'joeldickinsonuk.github.io',
-  '/mozaque/',
+  'mozaque.com',
+  '/',
   {'invite': code},
 ).toString();
 

@@ -37,7 +37,7 @@ jobs:
         run: flutter test
 
       - name: Build web app for GitHub Pages
-        run: flutter build web --release --base-href "/${GITHUB_REPOSITORY#*/}/"
+        run: flutter build web --release --base-href "/"
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

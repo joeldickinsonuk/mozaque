@@ -256,7 +256,7 @@ class _SignInScreenState extends State<SignInScreen> {
     try {
       final redirectTo = kIsWeb
           ? Uri.base.toString()
-          : 'https://joeldickinsonuk.github.io/mozaque/';
+          : 'https://mozaque.com/';
       await _db.auth.resend(
         type: OtpType.signup,
         email: email,
