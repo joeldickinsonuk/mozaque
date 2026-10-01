@@ -215,13 +215,7 @@ class _SharedProfileLandingState extends State<_SharedProfileLanding> {
                           textAlign: TextAlign.center,
                           style: const TextStyle(color: muted),
                         ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          'Public Mozaques appear here. Each one is view-only for visitors; only invited members can take part.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: muted, height: 1.55),
-                        ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 18),
                         FutureBuilder<List<Map<String, dynamic>>>(
                           future: _showcases,
                           builder: (context, showcaseSnapshot) {
@@ -3595,7 +3589,7 @@ class _SharedProfileSheetState extends State<_SharedProfileSheet> {
               Text(
                 widget.publicGalleries.isEmpty
                     ? 'A private connection. Their photos stay private unless they share a Mozaque with you.'
-                    : 'These Mozaques are public and view-only. Comments and sharing stay within Mozaques you join.',
+                    : 'Mozaques ${name.split(' ').first} has chosen to share.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: muted, height: 1.45),
               ),
@@ -3725,37 +3719,6 @@ class _PublicProfileGalleryBanner extends StatelessWidget {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [Color(0x1A10172B), Color(0xD910172B)],
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 12,
-                left: 14,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(.28),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withOpacity(.28)),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.public, size: 13, color: Colors.white),
-                      SizedBox(width: 5),
-                      Text(
-                        'PUBLIC MOZAQUE',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: .8,
-                        ),
-                      ),
-                    ],
                   ),
                 ),
               ),
@@ -3980,12 +3943,6 @@ class _PublicProfileGalleryDetailPageState
                       ),
                     ),
                 ],
-                const SizedBox(height: 10),
-                const Text(
-                  'View-only for visitors · Comments and reactions are for Mozaque members.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: muted, fontSize: 12),
-                ),
               ],
             ),
           ),
