@@ -68,10 +68,11 @@ class MozaqueRepository {
   Future<void> saveName(String value) async =>
       db.from('profiles').update({'display_name': value.trim()}).eq('id', uid);
 
-  Future<void> setPublicGallery(String? galleryId) async => db
-      .from('profiles')
-      .update({'public_gallery_id': galleryId})
-      .eq('id', uid);
+  Future<void> setGalleryPublic(String galleryId, bool isPublic) async =>
+      db.rpc(
+        'set_gallery_visibility',
+        params: {'target_gallery': galleryId, 'make_public': isPublic},
+      );
 
   Future<String?> saveProfileSlug(String value) async {
     final saved = await db.rpc(
@@ -90,12 +91,14 @@ class MozaqueRepository {
     return Map<String, dynamic>.from(rows.first as Map);
   }
 
-  Future<Map<String, dynamic>?> publicProfileGallery(String slug) async {
+  Future<List<Map<String, dynamic>>> publicProfileGalleries(String slug) async {
     final result = await db.rpc(
-      'public_profile_gallery',
+      'public_profile_galleries',
       params: {'target_slug': slug},
     );
-    return result is Map ? Map<String, dynamic>.from(result) : null;
+    return result is List
+        ? result.map((row) => Map<String, dynamic>.from(row as Map)).toList()
+        : <Map<String, dynamic>>[];
   }
 
   Future<String> requestConnectionBySlug(String slug) async => (await db.rpc(
@@ -266,6 +269,10 @@ class MozaqueRepository {
       throw StateError(
         'The signed-in account did not match the gallery owner.',
       );
+    }
+    if (values['is_public'] == true) {
+      await setGalleryPublic(gallery['id'] as String, true);
+      gallery['is_public'] = true;
     }
     return gallery;
   }

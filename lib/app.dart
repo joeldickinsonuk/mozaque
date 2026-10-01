@@ -149,13 +149,13 @@ class _SharedProfileLandingState extends State<_SharedProfileLanding> {
   bool _showAuth = false;
   bool _initialSignup = true;
   late Future<Map<String, dynamic>?> _profile;
-  late Future<Map<String, dynamic>?> _showcase;
+  late Future<List<Map<String, dynamic>>> _showcases;
 
   @override
   void initState() {
     super.initState();
     _profile = repo.lookupProfileSlug(widget.slug);
-    _showcase = repo.publicProfileGallery(widget.slug);
+    _showcases = repo.publicProfileGalleries(widget.slug);
   }
 
   @override
@@ -217,19 +217,31 @@ class _SharedProfileLandingState extends State<_SharedProfileLanding> {
                         ),
                         const SizedBox(height: 10),
                         const Text(
-                          'A personal profile with a public Mozaque, if they’ve chosen to share one. Only invited people can take part.',
+                          'Public Mozaques appear here. Each one is view-only for visitors; only invited members can take part.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: muted, height: 1.55),
                         ),
                         const SizedBox(height: 14),
-                        FutureBuilder<Map<String, dynamic>?>(
-                          future: _showcase,
+                        FutureBuilder<List<Map<String, dynamic>>>(
+                          future: _showcases,
                           builder: (context, showcaseSnapshot) {
-                            final gallery = showcaseSnapshot.data;
-                            if (gallery == null) {
+                            final galleries = showcaseSnapshot.data;
+                            if (galleries == null) {
                               return const SizedBox.shrink();
                             }
-                            return _PublicProfileGalleryView(gallery: gallery);
+                            if (galleries.isEmpty) {
+                              return const Padding(
+                                padding: EdgeInsets.only(top: 12),
+                                child: Text(
+                                  'No public Mozaques yet.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: muted),
+                                ),
+                              );
+                            }
+                            return _PublicProfileGalleriesView(
+                              galleries: galleries,
+                            );
                           },
                         ),
                         const SizedBox(height: 23),
@@ -1152,7 +1164,7 @@ class _HomeShellState extends State<HomeShell> {
         _notice('This profile link is no longer available.');
         return;
       }
-      final showcase = await repo.publicProfileGallery(slug);
+      final showcases = await repo.publicProfileGalleries(slug);
       final targetId = profile['profile_id']?.toString() ?? '';
       final status = targetId == _db.auth.currentUser?.id
           ? 'self'
@@ -1164,7 +1176,7 @@ class _HomeShellState extends State<HomeShell> {
         isScrollControlled: true,
         builder: (sheetContext) => _SharedProfileSheet(
           profile: profile,
-          publicGallery: showcase,
+          publicGalleries: showcases,
           initialStatus: status,
           onConnect: () async {
             final result = await repo.requestConnectionBySlug(slug);
@@ -1236,11 +1248,11 @@ class _HomeShellState extends State<HomeShell> {
     );
     if (created != null && mounted) {
       final publicSettingFailed =
-          created.remove('_public_profile_update_failed') == true;
+          created.remove('_public_visibility_update_failed') == true;
       await _load();
       if (publicSettingFailed) {
         _notice(
-          'Your Mozaque was created. Choose it in profile settings to show it publicly.',
+          'Your Mozaque was created, but its public setting could not be saved. Open People & permissions to try again.',
         );
       }
       _openGallery(created);
@@ -1570,10 +1582,6 @@ class _HomeShellState extends State<HomeShell> {
       text: _profile?['profile_slug']?.toString() ?? '',
     );
     var profileSlug = _profile?['profile_slug']?.toString();
-    final ownedGalleries = _galleries
-        .where((gallery) => gallery['owner_id'] == _db.auth.currentUser?.id)
-        .toList();
-    String? publicGalleryId = _profile?['public_gallery_id']?.toString();
     var avatarPath = _profile?['avatar_path'] as String?;
     var busy = false;
     var memoryRemindersEnabled = _profile?['memory_reminders_enabled'] != false;
@@ -1732,52 +1740,13 @@ class _HomeShellState extends State<HomeShell> {
                     ),
                   ),
                 const SizedBox(height: 8),
-                if (ownedGalleries.isEmpty)
-                  const ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text('Public profile gallery'),
-                    subtitle: Text(
-                      'Create a Mozaque to choose one to show on your profile.',
-                    ),
-                  )
-                else
-                  DropdownButtonFormField<String?>(
-                    value: publicGalleryId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Gallery on your public profile',
-                      helperText:
-                          'Only the gallery and its photos are public. Visitors cannot comment, Glow or keep Pieces.',
-                    ),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('None · keep my profile private'),
-                      ),
-                      ...ownedGalleries.map(
-                        (gallery) => DropdownMenuItem<String?>(
-                          value: gallery['id'] as String,
-                          child: Text(
-                            gallery['title']?.toString() ?? 'Untitled Mozaque',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ],
-                    onChanged: busy
-                        ? null
-                        : (value) =>
-                              setDialogState(() => publicGalleryId = value),
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('Public Mozaques'),
+                  subtitle: Text(
+                    'Choose public or private inside each Mozaque’s People & permissions settings.',
                   ),
-                if (publicGalleryId != null &&
-                    (profileSlug == null || profileSlug!.isEmpty))
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Set your personal link above so people can find this public gallery.',
-                      style: TextStyle(color: muted, fontSize: 12),
-                    ),
-                  ),
+                ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Echoes and anniversary reminders'),
@@ -2007,17 +1976,12 @@ class _HomeShellState extends State<HomeShell> {
                             requestedSlug,
                           );
                         }
-                        if (publicGalleryId !=
-                            _profile?['public_gallery_id']?.toString()) {
-                          await repo.setPublicGallery(publicGalleryId);
-                        }
                         if (!mounted || !dialogContext.mounted) return;
                         setState(() {
                           _profile = {
                             ...?_profile,
                             'display_name': value,
                             'profile_slug': profileSlug,
-                            'public_gallery_id': publicGalleryId,
                           };
                         });
                         await _load();
@@ -3539,12 +3503,12 @@ class _ConnectionsPage extends StatelessWidget {
 class _SharedProfileSheet extends StatefulWidget {
   const _SharedProfileSheet({
     required this.profile,
-    required this.publicGallery,
+    required this.publicGalleries,
     required this.initialStatus,
     required this.onConnect,
   });
   final Map<String, dynamic> profile;
-  final Map<String, dynamic>? publicGallery;
+  final List<Map<String, dynamic>> publicGalleries;
   final String initialStatus;
   final Future<String> Function() onConnect;
 
@@ -3625,16 +3589,16 @@ class _SharedProfileSheetState extends State<_SharedProfileSheet> {
               ),
               const SizedBox(height: 7),
               Text(
-                widget.publicGallery == null
+                widget.publicGalleries.isEmpty
                     ? 'A private connection. Their photos stay private unless they share a Mozaque with you.'
-                    : 'This gallery is public and view-only. Comments and sharing stay within Mozaques you join.',
+                    : 'These Mozaques are public and view-only. Comments and sharing stay within Mozaques you join.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: muted, height: 1.45),
               ),
-              if (widget.publicGallery != null) ...[
+              if (widget.publicGalleries.isNotEmpty) ...[
                 const SizedBox(height: 16),
-                _PublicProfileGalleryView(
-                  gallery: widget.publicGallery!,
+                _PublicProfileGalleriesView(
+                  galleries: widget.publicGalleries,
                   compact: true,
                 ),
               ],
@@ -3666,6 +3630,25 @@ class _SharedProfileSheetState extends State<_SharedProfileSheet> {
       ),
     );
   }
+}
+
+class _PublicProfileGalleriesView extends StatelessWidget {
+  const _PublicProfileGalleriesView({
+    required this.galleries,
+    this.compact = false,
+  });
+  final List<Map<String, dynamic>> galleries;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      for (final gallery in galleries) ...[
+        _PublicProfileGalleryView(gallery: gallery, compact: compact),
+        if (gallery != galleries.last) const SizedBox(height: 14),
+      ],
+    ],
+  );
 }
 
 class _PublicProfileGalleryView extends StatelessWidget {
@@ -4356,7 +4339,7 @@ class _CreateGallerySheetState extends State<CreateGallerySheet> {
       _description = TextEditingController();
   String _type = 'everyday', _policy = 'everyone', _audience = 'invited';
   DateTime _date = DateTime.now();
-  bool _recurring = false, _busy = false, _showOnPublicProfile = false;
+  bool _recurring = false, _busy = false, _makePublic = false;
   bool _loadingConnections = true;
   List<Map<String, dynamic>> _connections = [];
   final Set<String> _selectedConnectionIds = {};
@@ -4415,11 +4398,12 @@ class _CreateGallerySheetState extends State<CreateGallerySheet> {
         'audience': _audience,
       });
       _createdGallery = created;
-      if (_showOnPublicProfile) {
+      if (_makePublic) {
         try {
-          await repo.setPublicGallery(created['id'] as String);
+          await repo.setGalleryPublic(created['id'] as String, true);
+          created['is_public'] = true;
         } catch (_) {
-          created['_public_profile_update_failed'] = true;
+          created['_public_visibility_update_failed'] = true;
           if (mounted) Navigator.pop(context, created);
           return;
         }
@@ -4615,16 +4599,15 @@ class _CreateGallerySheetState extends State<CreateGallerySheet> {
                     const SizedBox(height: 4),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      value: _showOnPublicProfile,
-                      onChanged: (value) =>
-                          setState(() => _showOnPublicProfile = value),
+                      value: _makePublic,
+                      onChanged: (value) => setState(() => _makePublic = value),
                       activeThumbColor: blue,
                       title: const Text(
-                        'Show this gallery on my public profile',
+                        'Make this Mozaque public',
                         style: TextStyle(fontSize: 14),
                       ),
                       subtitle: const Text(
-                        'Anyone with your personal link can view its photos. Public visitors can’t comment, Glow or keep Pieces. Change this later in profile settings.',
+                        'Off by default. Anyone with your personal profile link can view its details and photos when this is on. Visitors can’t comment, Glow or keep Pieces. Change it later in People & permissions.',
                         style: TextStyle(fontSize: 12, height: 1.4),
                       ),
                     ),
@@ -4711,7 +4694,7 @@ class _CreateGallerySheetState extends State<CreateGallerySheet> {
                     ],
                     const SizedBox(height: 8),
                     Text(
-                      _showOnPublicProfile
+                      _makePublic
                           ? 'Public visitors can view photos only. Comments and interactions stay within the Mozaque for its members.'
                           : 'Photos stay private to people with access.',
                       style: const TextStyle(fontSize: 12, color: muted),
@@ -4782,7 +4765,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   bool _loading = true, _uploading = false, _addingPeople = false;
   bool _deleting = false;
   bool _canUpload = false;
-  bool _isPublicProfileGallery = false;
+  bool _isPublic = false;
   String? _error;
   double? _uploadProgress;
   int _uploadingIndex = 0, _uploadingTotal = 0;
@@ -4800,10 +4783,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
       _gallery = await repo.gallery(_gallery['id']);
       _canUpload = await repo.canUpload(_gallery);
       if (_gallery['owner_id'] == _db.auth.currentUser?.id) {
-        final profile = await repo.profile();
-        _isPublicProfileGallery =
-            profile?['public_gallery_id']?.toString() ==
-            _gallery['id']?.toString();
+        _isPublic = _gallery['is_public'] == true;
       }
       _photos = await repo.photos(galleryId: _gallery['id']);
       _members = await repo.members(_gallery['id']);
@@ -4819,7 +4799,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
   }
 
-  Future<void> _setPublicProfileGallery(bool makePublic) async {
+  Future<void> _setPublic(bool makePublic) async {
     if (makePublic) {
       final confirmed = await showDialog<bool>(
         context: context,
@@ -4827,7 +4807,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
           title: const Text('Show this Mozaque publicly?'),
           content: const Text(
             'Anyone with your personal profile link will be able to view this '
-            'Mozaque’s details and photos. They can’t comment, Glow, or keep '
+            'Mozaque’s details and photos. It will appear alongside any other '
+            'Mozaques you’ve made public. Visitors can’t comment, Glow, or keep '
             'Pieces. You can turn this off at any time.',
           ),
           actions: [
@@ -4845,14 +4826,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
       if (confirmed != true || !mounted) return;
     }
     try {
-      await repo.setPublicGallery(makePublic ? _gallery['id'] as String : null);
+      await repo.setGalleryPublic(_gallery['id'] as String, makePublic);
+      _gallery['is_public'] = makePublic;
       if (!mounted) return;
-      setState(() => _isPublicProfileGallery = makePublic);
+      setState(() => _isPublic = makePublic);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             makePublic
-                ? 'This Mozaque now appears on your public profile.'
+                ? 'This Mozaque is public on your profile.'
                 : 'This Mozaque is private again.',
           ),
         ),
@@ -5731,12 +5713,14 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       children: [
                         SwitchListTile.adaptive(
                           contentPadding: EdgeInsets.zero,
-                          value: _isPublicProfileGallery,
+                          value: _isPublic,
                           title: const Text('Show on my public profile'),
-                          subtitle: const Text(
-                            'Anyone with your profile link can view this Mozaque’s details and photos. Visitors can’t comment, Glow, or keep Pieces. Only one Mozaque can be public at a time.',
+                          subtitle: Text(
+                            _isPublic
+                                ? 'Anyone with your personal link can view its details and photos. Visitors can’t comment, Glow, or keep Pieces.'
+                                : 'Private by default. Turn this on to show the Mozaque on your public profile.',
                           ),
-                          onChanged: (value) => _setPublicProfileGallery(value),
+                          onChanged: _setPublic,
                         ),
                         if (_gallery['audience'] == 'invited' &&
                             _gallery['frozen_at'] == null)
