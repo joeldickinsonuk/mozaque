@@ -10,6 +10,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 String mozaqueInviteLink(String code) =>
     Uri.https('mozaque.com', '/', {'invite': code}).toString();
 
+String mozaqueProfileLink(String slug) =>
+    Uri.https('mozaque.com', '/', {'person': slug}).toString();
+
 class MozaqueRepository {
   MozaqueRepository(this.db);
   final SupabaseClient db;
@@ -31,6 +34,77 @@ class MozaqueRepository {
 
   Future<void> saveName(String value) async =>
       db.from('profiles').update({'display_name': value.trim()}).eq('id', uid);
+
+  Future<String?> saveProfileSlug(String value) async {
+    final saved = await db.rpc(
+      'set_my_profile_slug',
+      params: {'requested_slug': value},
+    );
+    return saved is String && saved.isNotEmpty ? saved : null;
+  }
+
+  Future<Map<String, dynamic>?> lookupProfileSlug(String slug) async {
+    final rows = await db.rpc(
+      'lookup_profile_slug',
+      params: {'target_slug': slug},
+    );
+    if (rows is! List || rows.isEmpty) return null;
+    return Map<String, dynamic>.from(rows.first as Map);
+  }
+
+  Future<String> requestConnectionBySlug(String slug) async => (await db.rpc(
+    'request_connection_by_slug',
+    params: {'target_slug': slug},
+  )).toString();
+
+  Future<String> respondToConnectionRequest(
+    String requestId, {
+    required bool accept,
+  }) async => (await db.rpc(
+    'respond_to_connection_request',
+    params: {'request_id': requestId, 'accept_request': accept},
+  )).toString();
+
+  Future<List<Map<String, dynamic>>>
+  incomingConnectionRequests() async => List<Map<String, dynamic>>.from(
+    await db
+        .from('connection_requests')
+        .select(
+          'id,requester_id,created_at,profiles!connection_requests_requester_id_fkey(display_name,avatar_path)',
+        )
+        .eq('recipient_id', uid)
+        .eq('status', 'pending')
+        .order('created_at', ascending: false),
+  );
+
+  Future<String> connectionStatus(String otherUserId) async {
+    final links = await db
+        .from('connections')
+        .select('user_a,user_b')
+        .or('user_a.eq.$uid,user_b.eq.$uid');
+    if (links.any(
+      (row) => row['user_a'] == otherUserId || row['user_b'] == otherUserId,
+    )) {
+      return 'connected';
+    }
+    final requests = await db
+        .from('connection_requests')
+        .select('requester_id,recipient_id,status')
+        .or('requester_id.eq.$uid,recipient_id.eq.$uid');
+    for (final row in requests) {
+      if (row['requester_id'] == uid &&
+          row['recipient_id'] == otherUserId &&
+          row['status'] == 'pending') {
+        return 'outgoing';
+      }
+      if (row['recipient_id'] == uid &&
+          row['requester_id'] == otherUserId &&
+          row['status'] == 'pending') {
+        return 'incoming';
+      }
+    }
+    return 'none';
+  }
 
   Future<void> setMemoryReminders(bool enabled) async =>
       db.from('user_preferences').upsert({

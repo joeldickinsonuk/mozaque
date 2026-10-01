@@ -125,14 +125,127 @@ class AuthGate extends StatelessWidget {
           snapshot.data?.event == AuthChangeEvent.passwordRecovery) {
         return const _PasswordRecoveryScreen();
       }
-      if (session == null) return const SignInScreen();
+      if (session == null) {
+        final sharedSlug = kIsWeb ? Uri.base.queryParameters['person'] : null;
+        if (sharedSlug != null && sharedSlug.isNotEmpty) {
+          return _SharedProfileLanding(slug: sharedSlug);
+        }
+        return const SignInScreen();
+      }
       return const HomeShell();
     },
   );
 }
 
+class _SharedProfileLanding extends StatefulWidget {
+  const _SharedProfileLanding({required this.slug});
+  final String slug;
+
+  @override
+  State<_SharedProfileLanding> createState() => _SharedProfileLandingState();
+}
+
+class _SharedProfileLandingState extends State<_SharedProfileLanding> {
+  bool _showAuth = false;
+  bool _initialSignup = true;
+  late Future<Map<String, dynamic>?> _profile;
+
+  @override
+  void initState() {
+    super.initState();
+    _profile = repo.lookupProfileSlug(widget.slug);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showAuth) return SignInScreen(initialSignup: _initialSignup);
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 430),
+              child: FutureBuilder<Map<String, dynamic>?>(
+                future: _profile,
+                builder: (context, snapshot) {
+                  final profile = snapshot.data;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Center(child: BrandMark()),
+                      const SizedBox(height: 34),
+                      if (snapshot.connectionState != ConnectionState.done)
+                        const Center(child: CircularProgressIndicator())
+                      else if (snapshot.hasError || profile == null) ...[
+                        const Icon(Icons.link_off, size: 48, color: muted),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'This profile link is no longer available.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 22, color: ink),
+                        ),
+                      ] else ...[
+                        const Text(
+                          'YOU’VE BEEN INVITED TO CONNECT',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: muted,
+                            letterSpacing: 1.4,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          profile['display_name']?.toString() ??
+                              'Someone you know',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontFamily: 'serif',
+                            fontSize: 35,
+                            color: ink,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Join Mozaque to send a private connection request. They’ll choose whether to accept, and their photos stay private unless they share a Mozaque with you.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: muted, height: 1.55),
+                        ),
+                        const SizedBox(height: 23),
+                        FilledButton.icon(
+                          onPressed: () => setState(() {
+                            _initialSignup = true;
+                            _showAuth = true;
+                          }),
+                          icon: const Icon(Icons.person_add_alt_1),
+                          label: const Text('Create your free account'),
+                        ),
+                        const SizedBox(height: 10),
+                        TextButton(
+                          onPressed: () => setState(() {
+                            _initialSignup = false;
+                            _showAuth = true;
+                          }),
+                          child: const Text('Already have an account? Sign in'),
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class SignInScreen extends StatefulWidget {
-  const SignInScreen({super.key});
+  const SignInScreen({super.key, this.initialSignup = false});
+  final bool initialSignup;
   @override
   State<SignInScreen> createState() => _SignInScreenState();
 }
@@ -147,6 +260,12 @@ class _SignInScreenState extends State<SignInScreen> {
   bool _confirmationSent = false;
   String? _error;
   @override
+  void initState() {
+    super.initState();
+    _new = widget.initialSignup;
+  }
+
+  @override
   void dispose() {
     _email.dispose();
     _password.dispose();
@@ -160,7 +279,9 @@ class _SignInScreenState extends State<SignInScreen> {
     try {
       if (_new) {
         String? emailRedirectTo;
-        if (kIsWeb && Uri.base.queryParameters.containsKey('invite')) {
+        if (kIsWeb &&
+            (Uri.base.queryParameters.containsKey('invite') ||
+                Uri.base.queryParameters.containsKey('person'))) {
           emailRedirectTo = Uri.base.toString();
         } else if (!kIsWeb) {
           try {
@@ -749,12 +870,14 @@ class _HomeShellState extends State<HomeShell> {
       _feed = [],
       _notifications = [],
       _pieces = [],
-      _connections = [];
+      _connections = [],
+      _incomingRequests = [];
   Map<String, dynamic>? _profile;
   bool _loading = true;
   String? _error;
   StreamSubscription<Uri>? _linkSub;
   bool _joining = false;
+  bool _profileLinkOpened = false;
   @override
   void initState() {
     super.initState();
@@ -782,6 +905,13 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Future<void> _handleLink(Uri uri) async {
+    final profileSlug = uri.queryParameters['person'];
+    if (profileSlug != null && profileSlug.isNotEmpty) {
+      if (_profileLinkOpened) return;
+      _profileLinkOpened = true;
+      await _showSharedProfile(profileSlug);
+      return;
+    }
     final isAppInvite = uri.scheme == 'mozaque' && uri.host == 'invite';
     final isWebInvite = kIsWeb && uri.queryParameters.containsKey('invite');
     if (!isAppInvite && !isWebInvite) return;
@@ -820,15 +950,17 @@ class _HomeShellState extends State<HomeShell> {
     setState(() => _loading = true);
     try {
       final p = await repo.profile();
-      if (p == null)
+      if (p == null) {
         throw StateError(
           'Your profile is still being created. Please sign out and back in.',
         );
+      }
       final g = await repo.galleries();
       final f = await repo.feed();
       final notifications = await repo.notifications();
       final pieces = await repo.photos(pieces: true);
       final connections = await repo.connections();
+      final incomingRequests = await repo.incomingConnectionRequests();
       if (!mounted) return;
       final userId = _db.auth.currentUser?.id ?? '';
       final attention = await _checkForNewItems(userId, f, notifications, g);
@@ -840,6 +972,7 @@ class _HomeShellState extends State<HomeShell> {
         _notifications = notifications;
         _pieces = pieces;
         _connections = connections;
+        _incomingRequests = incomingRequests;
         if (attention.feed) {
           _feedPulse++;
           _hasNewFeed = _tab != 0;
@@ -987,6 +1120,87 @@ class _HomeShellState extends State<HomeShell> {
       ..showSnackBar(
         SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
       );
+  }
+
+  Future<void> _showSharedProfile(String slug) async {
+    try {
+      final profile = await repo.lookupProfileSlug(slug);
+      if (!mounted) return;
+      if (profile == null) {
+        _notice('This profile link is no longer available.');
+        return;
+      }
+      final targetId = profile['profile_id']?.toString() ?? '';
+      final status = targetId == _db.auth.currentUser?.id
+          ? 'self'
+          : await repo.connectionStatus(targetId);
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (sheetContext) => _SharedProfileSheet(
+          profile: profile,
+          initialStatus: status,
+          onConnect: () async {
+            final result = await repo.requestConnectionBySlug(slug);
+            await _load();
+            if (mounted) {
+              _notice(
+                result == 'connected'
+                    ? 'You’re connected. You can now share privately on Mozaque.'
+                    : 'Connection request sent. They can accept it when they’re ready.',
+              );
+            }
+            return result;
+          },
+        ),
+      );
+    } catch (e) {
+      if (mounted) _notice(_message(e));
+    }
+  }
+
+  Future<void> _shareMyProfile() async {
+    var slug = _profile?['profile_slug']?.toString();
+    if (slug == null || slug.isEmpty) {
+      _notice('Choose your personal link in your profile settings first.');
+      await _editProfile();
+      slug = _profile?['profile_slug']?.toString();
+    }
+    if (slug == null || slug.isEmpty || !mounted) return;
+    final link = mozaqueProfileLink(slug);
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          subject: 'Connect with me on Mozaque',
+          text:
+              'Connect with me on Mozaque. My photos stay private unless I share a Mozaque with you.\n\n$link',
+        ),
+      );
+    } catch (_) {
+      await Clipboard.setData(ClipboardData(text: link));
+      if (mounted) _notice('Your Mozaque link was copied.');
+    }
+  }
+
+  Future<void> _respondToConnectionRequest(
+    String requestId,
+    bool accept,
+  ) async {
+    try {
+      await repo.respondToConnectionRequest(requestId, accept: accept);
+      await _load();
+      if (mounted) {
+        _notice(
+          accept
+              ? 'You’re connected. You can now share privately on Mozaque.'
+              : 'Connection request declined.',
+        );
+      }
+    } catch (e) {
+      if (mounted) _notice(_message(e));
+    }
   }
 
   Future<void> _create() async {
@@ -1259,6 +1473,10 @@ class _HomeShellState extends State<HomeShell> {
     final controller = TextEditingController(
       text: _profile?['display_name'] ?? '',
     );
+    final slugController = TextEditingController(
+      text: _profile?['profile_slug']?.toString() ?? '',
+    );
+    var profileSlug = _profile?['profile_slug']?.toString();
     var avatarPath = _profile?['avatar_path'] as String?;
     var busy = false;
     var memoryRemindersEnabled = _profile?['memory_reminders_enabled'] != false;
@@ -1366,6 +1584,56 @@ class _HomeShellState extends State<HomeShell> {
                   textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(hintText: 'Your name'),
                 ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: slugController,
+                  maxLength: 30,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Your personal Mozaque link',
+                    prefixText: 'mozaque.com/?person=',
+                    helperText:
+                        'Choose a link people can use to request a connection.',
+                  ),
+                ),
+                if (profileSlug != null && profileSlug!.isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: busy
+                          ? null
+                          : () async {
+                              final link = mozaqueProfileLink(profileSlug!);
+                              try {
+                                await SharePlus.instance.share(
+                                  ShareParams(
+                                    subject: 'Connect with me on Mozaque',
+                                    text:
+                                        'Connect with me on Mozaque. My photos stay private unless I share a Mozaque with you.\n\n$link',
+                                  ),
+                                );
+                              } catch (_) {
+                                await Clipboard.setData(
+                                  ClipboardData(text: link),
+                                );
+                                if (dialogContext.mounted) {
+                                  ScaffoldMessenger.of(
+                                    dialogContext,
+                                  ).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Your Mozaque link was copied.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                      icon: const Icon(Icons.ios_share),
+                      label: const Text('Share my link'),
+                    ),
+                  ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Echoes and anniversary reminders'),
@@ -1589,9 +1857,19 @@ class _HomeShellState extends State<HomeShell> {
                       });
                       try {
                         await repo.saveName(value);
+                        final requestedSlug = slugController.text.trim();
+                        if (requestedSlug != (profileSlug ?? '')) {
+                          profileSlug = await repo.saveProfileSlug(
+                            requestedSlug,
+                          );
+                        }
                         if (!mounted || !dialogContext.mounted) return;
                         setState(() {
-                          _profile = {...?_profile, 'display_name': value};
+                          _profile = {
+                            ...?_profile,
+                            'display_name': value,
+                            'profile_slug': profileSlug,
+                          };
                         });
                         await _load();
                         if (dialogContext.mounted) {
@@ -1620,6 +1898,7 @@ class _HomeShellState extends State<HomeShell> {
       ),
     );
     controller.dispose();
+    slugController.dispose();
   }
 
   Future<void> _showConnectionProfile(Map<String, dynamic> person) =>
@@ -1684,6 +1963,7 @@ class _HomeShellState extends State<HomeShell> {
         onRefresh: _load,
         onCreate: _create,
         onOpen: _openGallery,
+        onOpenConnections: () => _selectTab(3),
         onPieceKept: _recordKeptPiece,
       ),
       _MemoryPage(
@@ -1702,8 +1982,12 @@ class _HomeShellState extends State<HomeShell> {
       ),
       _ConnectionsPage(
         connections: _connections,
+        incomingRequests: _incomingRequests,
+        profileSlug: _profile?['profile_slug']?.toString(),
         onInvite: () => _invite(),
         onJoin: _joinWithCode,
+        onShareProfile: _shareMyProfile,
+        onRespond: _respondToConnectionRequest,
         onRefresh: _load,
         onOpenProfile: _showConnectionProfile,
       ),
@@ -1788,8 +2072,16 @@ class _HomeShellState extends State<HomeShell> {
               label: 'Pieces',
             ),
             NavigationDestination(
-              icon: Icon(Icons.people_outline),
-              selectedIcon: Icon(Icons.people),
+              icon: Badge(
+                isLabelVisible: _incomingRequests.isNotEmpty,
+                label: Text('${_incomingRequests.length}'),
+                child: const Icon(Icons.people_outline),
+              ),
+              selectedIcon: Badge(
+                isLabelVisible: _incomingRequests.isNotEmpty,
+                label: Text('${_incomingRequests.length}'),
+                child: const Icon(Icons.people),
+              ),
               label: 'People',
             ),
           ],
@@ -1924,6 +2216,7 @@ class _FeedPage extends StatelessWidget {
     required this.onRefresh,
     required this.onCreate,
     required this.onOpen,
+    required this.onOpenConnections,
     required this.onPieceKept,
   });
   final List<Map<String, dynamic>> galleries, feed, notifications;
@@ -1933,6 +2226,7 @@ class _FeedPage extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final VoidCallback onCreate;
   final ValueChanged<Map<String, dynamic>> onOpen;
+  final VoidCallback onOpenConnections;
   final Future<void> Function() onPieceKept;
   @override
   Widget build(BuildContext context) {
@@ -2137,6 +2431,12 @@ class _FeedPage extends StatelessWidget {
                           detail = 'You’re now connected on Mozaque · $date';
                           icon = Icons.person_add_alt_1_outlined;
                           accent = const Color(0xFF3A9B8B);
+                        case 'connection_request':
+                          kind = 'CONNECTION REQUEST';
+                          title = '$actor would like to connect';
+                          detail = 'Review their request in People · $date';
+                          icon = Icons.person_add_alt_1_outlined;
+                          accent = const Color(0xFF3A9B8B);
                         default:
                           kind = 'UPDATE';
                           title = 'There’s something new';
@@ -2151,6 +2451,10 @@ class _FeedPage extends StatelessWidget {
                         icon: icon,
                         accent: accent,
                         onTap: () {
+                          if (notification['kind'] == 'connection_request') {
+                            onOpenConnections();
+                            return;
+                          }
                           final target = galleries
                               .where((g) => g['id'] == galleryId)
                               .firstOrNull;
@@ -2901,13 +3205,21 @@ class _PiecesPage extends StatelessWidget {
 class _ConnectionsPage extends StatelessWidget {
   const _ConnectionsPage({
     required this.connections,
+    required this.incomingRequests,
+    required this.profileSlug,
     required this.onInvite,
     required this.onJoin,
+    required this.onShareProfile,
+    required this.onRespond,
     required this.onRefresh,
     required this.onOpenProfile,
   });
   final List<Map<String, dynamic>> connections;
+  final List<Map<String, dynamic>> incomingRequests;
+  final String? profileSlug;
   final VoidCallback onInvite, onJoin;
+  final VoidCallback onShareProfile;
+  final Future<void> Function(String requestId, bool accept) onRespond;
   final Future<void> Function() onRefresh;
   final ValueChanged<Map<String, dynamic>> onOpenProfile;
   @override
@@ -2944,10 +3256,23 @@ class _ConnectionsPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Connections are private. No followers or public profiles.',
+                    'No public search or follower counts. Your photos stay private.',
                     style: TextStyle(color: muted),
                   ),
                   const SizedBox(height: 20),
+                  if (profileSlug == null || profileSlug!.isEmpty)
+                    OutlinedButton.icon(
+                      onPressed: onShareProfile,
+                      icon: const Icon(Icons.link),
+                      label: const Text('Set up your personal link'),
+                    )
+                  else
+                    OutlinedButton.icon(
+                      onPressed: onShareProfile,
+                      icon: const Icon(Icons.ios_share),
+                      label: const Text('Share your Mozaque link'),
+                    ),
+                  const SizedBox(height: 14),
                   Row(
                     children: [
                       Expanded(
@@ -2968,6 +3293,69 @@ class _ConnectionsPage extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 15),
+                  if (incomingRequests.isNotEmpty) ...[
+                    Text(
+                      'CONNECTION REQUESTS  ·  ${incomingRequests.length}',
+                      style: const TextStyle(
+                        color: muted,
+                        letterSpacing: 1.2,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    ...incomingRequests.map((request) {
+                      final person =
+                          request['profiles'] as Map<String, dynamic>?;
+                      final name =
+                          person?['display_name']?.toString() ?? 'Someone';
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 9),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                          child: Column(
+                            children: [
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: _Avatar(
+                                  name: name,
+                                  path: person?['avatar_path'] as String?,
+                                ),
+                                title: Text(name),
+                                subtitle: const Text(
+                                  'Would like to connect with you',
+                                ),
+                              ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextButton(
+                                      onPressed: () => onRespond(
+                                        request['id'].toString(),
+                                        false,
+                                      ),
+                                      child: const Text('Decline'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: FilledButton(
+                                      onPressed: () => onRespond(
+                                        request['id'].toString(),
+                                        true,
+                                      ),
+                                      child: const Text('Accept'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 14),
+                  ],
                   if (connections.isEmpty)
                     _EmptyCard(
                       icon: Icons.people_outline,
@@ -2997,6 +3385,122 @@ class _ConnectionsPage extends StatelessWidget {
       ],
     ),
   );
+}
+
+class _SharedProfileSheet extends StatefulWidget {
+  const _SharedProfileSheet({
+    required this.profile,
+    required this.initialStatus,
+    required this.onConnect,
+  });
+  final Map<String, dynamic> profile;
+  final String initialStatus;
+  final Future<String> Function() onConnect;
+
+  @override
+  State<_SharedProfileSheet> createState() => _SharedProfileSheetState();
+}
+
+class _SharedProfileSheetState extends State<_SharedProfileSheet> {
+  late String _status = widget.initialStatus;
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _connect() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final status = await widget.onConnect();
+      if (mounted) setState(() => _status = status);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'Could not send the request. Please try again.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = widget.profile['display_name']?.toString() ?? 'Mozaque member';
+    final canSeeAvatar =
+        _status == 'connected' ||
+        _status == 'incoming' ||
+        _status == 'outgoing';
+    final buttonLabel = switch (_status) {
+      'self' => 'This is your profile',
+      'connected' => 'Connected privately',
+      'outgoing' => 'Request sent',
+      'incoming' => 'Accept connection request',
+      _ => 'Request to connect',
+    };
+    final canAct = _status == 'none' || _status == 'incoming';
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 22),
+      decoration: const BoxDecoration(
+        color: paper,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _Avatar(
+              name: name,
+              path: canSeeAvatar
+                  ? widget.profile['avatar_path'] as String?
+                  : null,
+              size: 84,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              name,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'serif',
+                fontSize: 29,
+                color: ink,
+              ),
+            ),
+            const SizedBox(height: 7),
+            const Text(
+              'A private connection. Their photos stay private unless they share a Mozaque with you.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: muted, height: 1.45),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(_error!, style: const TextStyle(color: Color(0xFFB42318))),
+            ],
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: canAct && !_busy ? _connect : null,
+                child: _busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(buttonLabel),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _MemoryPage extends StatefulWidget {

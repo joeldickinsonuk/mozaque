@@ -13,4 +13,13 @@ void main() {
       expect(link.queryParameters['invite'], 'test-code+with/slash');
     },
   );
+
+  test('profile links open a sign-up-ready page on the live domain', () {
+    final link = Uri.parse(mozaqueProfileLink('joel_dickinson'));
+
+    expect(link.scheme, 'https');
+    expect(link.host, 'mozaque.com');
+    expect(link.path, '/');
+    expect(link.queryParameters['person'], 'joel_dickinson');
+  });
 }
