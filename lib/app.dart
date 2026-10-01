@@ -2044,54 +2044,42 @@ class _HomeShellState extends State<HomeShell> {
     slugController.dispose();
   }
 
-  Future<void> _showConnectionProfile(Map<String, dynamic> person) =>
-      showModalBottomSheet<void>(
-        context: context,
-        backgroundColor: Colors.transparent,
-        builder: (sheetContext) => Container(
-          padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
-          decoration: const BoxDecoration(
-            color: paper,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _Avatar(
-                  name: person['display_name']?.toString() ?? '?',
-                  path: person['avatar_path'] as String?,
-                  size: 104,
-                ),
-                const SizedBox(height: 15),
-                Text(
-                  person['display_name']?.toString() ?? 'Mozaque member',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontFamily: 'serif',
-                    fontSize: 28,
-                    color: ink,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                const Text(
-                  'Connected privately',
-                  style: TextStyle(color: muted),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(sheetContext),
-                    child: const Text('Done'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
+  Future<void> _showConnectionProfile(Map<String, dynamic> person) async {
+    final personId = person['id']?.toString();
+    final slug = person['profile_slug']?.toString();
+    final privateGalleries = _galleries
+        .where(
+          (gallery) =>
+              gallery['owner_id'] == personId && gallery['is_public'] != true,
+        )
+        .toList();
+    var publicGalleries = <Map<String, dynamic>>[];
+    if (slug != null && slug.isNotEmpty) {
+      try {
+        publicGalleries = await repo.publicProfileGalleries(slug);
+      } catch (_) {
+        // Keep showing private galleries already available through RLS.
+      }
+    }
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => _SharedProfileSheet(
+        profile: person,
+        publicGalleries: publicGalleries,
+        privateGalleries: privateGalleries,
+        slug: slug ?? '',
+        initialStatus: 'connected',
+        onConnect: () async => 'connected',
+        onOpenGallery: (gallery) {
+          Navigator.pop(sheetContext);
+          _openGallery(gallery);
+        },
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3545,12 +3533,16 @@ class _SharedProfileSheet extends StatefulWidget {
     required this.slug,
     required this.initialStatus,
     required this.onConnect,
+    this.privateGalleries = const [],
+    this.onOpenGallery,
   });
   final Map<String, dynamic> profile;
   final List<Map<String, dynamic>> publicGalleries;
+  final List<Map<String, dynamic>> privateGalleries;
   final String slug;
   final String initialStatus;
   final Future<String> Function() onConnect;
+  final ValueChanged<Map<String, dynamic>>? onOpenGallery;
 
   @override
   State<_SharedProfileSheet> createState() => _SharedProfileSheetState();
@@ -3629,18 +3621,71 @@ class _SharedProfileSheetState extends State<_SharedProfileSheet> {
               ),
               const SizedBox(height: 7),
               Text(
-                widget.publicGalleries.isEmpty
-                    ? 'A private connection. Their photos stay private unless they share a Mozaque with you.'
-                    : 'Mozaques ${name.split(' ').first} has chosen to share.',
+                widget.publicGalleries.isEmpty &&
+                        widget.privateGalleries.isEmpty
+                    ? _status == 'connected'
+                          ? 'No Mozaques shared yet. Public galleries and the private ones they share with you will appear here.'
+                          : 'They haven’t shared a public Mozaque yet. Connect to share private galleries with them.'
+                    : 'Browse the Mozaques they’ve made public and the private galleries they’ve shared with you.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: muted, height: 1.45),
               ),
               if (widget.publicGalleries.isNotEmpty) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
+                _ProfileGallerySectionHeading(
+                  title: 'Public on their profile',
+                  count: widget.publicGalleries.length,
+                ),
+                const SizedBox(height: 10),
                 _PublicProfileGalleriesView(
                   galleries: widget.publicGalleries,
                   slug: widget.slug,
                   compact: true,
+                ),
+              ],
+              if (widget.privateGalleries.isNotEmpty) ...[
+                const SizedBox(height: 18),
+                _ProfileGallerySectionHeading(
+                  title: 'Shared privately with you',
+                  count: widget.privateGalleries.length,
+                ),
+                const SizedBox(height: 10),
+                ...widget.privateGalleries.map(
+                  (gallery) => _GalleryCard(
+                    gallery: gallery,
+                    onTap: () => widget.onOpenGallery?.call(gallery),
+                  ),
+                ),
+              ],
+              if (widget.publicGalleries.isEmpty &&
+                  widget.privateGalleries.isEmpty) ...[
+                const SizedBox(height: 18),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF2F4FA),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: const Column(
+                    children: [
+                      Icon(Icons.photo_library_outlined, color: muted),
+                      SizedBox(height: 8),
+                      Text(
+                        'No Mozaques shared yet',
+                        style: TextStyle(
+                          color: ink,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'When they share a public gallery or invite you to a private one, you’ll find it here.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: muted, height: 1.4),
+                      ),
+                    ],
+                  ),
                 ),
               ],
               if (_error != null) ...[
@@ -3671,6 +3716,32 @@ class _SharedProfileSheetState extends State<_SharedProfileSheet> {
       ),
     );
   }
+}
+
+class _ProfileGallerySectionHeading extends StatelessWidget {
+  const _ProfileGallerySectionHeading({
+    required this.title,
+    required this.count,
+  });
+  final String title;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: Text(
+          title,
+          style: const TextStyle(
+            color: ink,
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
+          ),
+        ),
+      ),
+      Text('$count', style: const TextStyle(color: muted, fontSize: 12)),
+    ],
+  );
 }
 
 class _PublicProfileGalleriesView extends StatelessWidget {
