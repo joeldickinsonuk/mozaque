@@ -126,7 +126,7 @@ class AuthGate extends StatelessWidget {
         return const _PasswordRecoveryScreen();
       }
       if (session == null) {
-        final sharedSlug = kIsWeb ? Uri.base.queryParameters['person'] : null;
+        final sharedSlug = kIsWeb ? mozaqueProfileSlugFromUri(Uri.base) : null;
         if (sharedSlug != null && sharedSlug.isNotEmpty) {
           return _SharedProfileLanding(slug: sharedSlug);
         }
@@ -281,7 +281,7 @@ class _SignInScreenState extends State<SignInScreen> {
         String? emailRedirectTo;
         if (kIsWeb &&
             (Uri.base.queryParameters.containsKey('invite') ||
-                Uri.base.queryParameters.containsKey('person'))) {
+                mozaqueProfileSlugFromUri(Uri.base) != null)) {
           emailRedirectTo = Uri.base.toString();
         } else if (!kIsWeb) {
           try {
@@ -905,7 +905,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Future<void> _handleLink(Uri uri) async {
-    final profileSlug = uri.queryParameters['person'];
+    final profileSlug = mozaqueProfileSlugFromUri(uri);
     if (profileSlug != null && profileSlug.isNotEmpty) {
       if (_profileLinkOpened) return;
       _profileLinkOpened = true;
@@ -1592,7 +1592,7 @@ class _HomeShellState extends State<HomeShell> {
                   enableSuggestions: false,
                   decoration: const InputDecoration(
                     labelText: 'Your personal Mozaque link',
-                    prefixText: 'mozaque.com/?person=',
+                    prefixText: 'mozaque.com/',
                     helperText:
                         'Choose a link people can use to request a connection.',
                   ),

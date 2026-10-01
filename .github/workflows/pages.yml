@@ -39,6 +39,9 @@ jobs:
       - name: Build web app for GitHub Pages
         run: flutter build web --release --base-href "/"
 
+      - name: Enable direct profile links on GitHub Pages
+        run: cp build/web/index.html build/web/404.html
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 

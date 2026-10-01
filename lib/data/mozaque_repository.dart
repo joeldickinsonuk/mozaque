@@ -11,7 +11,35 @@ String mozaqueInviteLink(String code) =>
     Uri.https('mozaque.com', '/', {'invite': code}).toString();
 
 String mozaqueProfileLink(String slug) =>
-    Uri.https('mozaque.com', '/', {'person': slug}).toString();
+    Uri.https('mozaque.com', '/${Uri.encodeComponent(slug)}').toString();
+
+/// Reads both clean profile paths and older query-based profile links.
+String? mozaqueProfileSlugFromUri(Uri uri) {
+  final legacySlug = uri.queryParameters['person'];
+  if (legacySlug != null && legacySlug.isNotEmpty) return legacySlug;
+  if (uri.pathSegments.length != 1) return null;
+  final slug = uri.pathSegments.single;
+  const reservedPaths = {
+    'feed',
+    'people',
+    'settings',
+    'auth',
+    'invite',
+    'privacy',
+    'terms',
+    'profile',
+    'mozaques',
+    'pieces',
+    'login',
+    'signup',
+    'join',
+    'about',
+  };
+  if (slug.isEmpty || slug.contains('.') || reservedPaths.contains(slug)) {
+    return null;
+  }
+  return slug;
+}
 
 class MozaqueRepository {
   MozaqueRepository(this.db);
