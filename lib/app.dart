@@ -2078,17 +2078,45 @@ class _PhotoCard extends StatefulWidget {
 }
 
 class _PhotoCardState extends State<_PhotoCard> {
-  bool _busy = false;
+  String? _busyAction;
+  Map<String, dynamic>? _updatedPhoto;
+
+  @override
+  void didUpdateWidget(covariant _PhotoCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.photo['my_glow'] != widget.photo['my_glow'] ||
+        oldWidget.photo['my_piece'] != widget.photo['my_piece'] ||
+        oldWidget.photo['glow_count'] != widget.photo['glow_count']) {
+      _updatedPhoto = null;
+    }
+  }
+
   Future<void> _toggle(String table, bool active) async {
-    if (_busy) return;
-    setState(() => _busy = true);
+    if (_busyAction != null) return;
+    final action = table == 'piece' ? 'piece' : 'glow';
+    setState(() => _busyAction = action);
     try {
       if (table == 'piece') {
         await repo.keepPiece(widget.photo['id'], active);
       } else {
         await repo.glow(widget.photo['id'], active);
       }
-      await widget.onRefresh();
+      if (!mounted) return;
+      final current = _updatedPhoto ?? widget.photo;
+      setState(() {
+        _updatedPhoto = {
+          ...current,
+          if (table == 'piece') 'my_piece': active,
+          if (table == 'glow') 'my_glow': active,
+          if (table == 'glow')
+            'glow_count':
+                (((current['glow_count'] as num?)?.toInt() ?? 0) +
+                        (active ? 1 : -1))
+                    .clamp(0, 1000000),
+        };
+        _busyAction = null;
+      });
+      unawaited(widget.onRefresh());
     } catch (e) {
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2101,13 +2129,15 @@ class _PhotoCardState extends State<_PhotoCard> {
           ),
         );
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && _busyAction != null) {
+        setState(() => _busyAction = null);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final p = widget.photo;
+    final p = _updatedPhoto ?? widget.photo;
     final gallery = p['galleries'] as Map<String, dynamic>?;
     final galleryTitle = _presentMozaqueTitle(
       gallery?['title']?.toString() ?? 'A Mozaque',
@@ -2180,58 +2210,78 @@ class _PhotoCardState extends State<_PhotoCard> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 2, 8, 5),
-            child: Row(
-              children: [
-                TextButton.icon(
-                  onPressed: _busy
-                      ? null
-                      : () => _toggle('glow', p['my_glow'] != true),
-                  icon: Icon(
-                    Icons.local_fire_department_outlined,
-                    color: p['my_glow'] == true
-                        ? const Color(0xFFE5953D)
-                        : muted,
-                    size: 19,
-                  ),
-                  label: Text(
-                    p['my_glow'] == true ? 'Glowed' : 'Glow',
-                    style: TextStyle(
-                      color: p['my_glow'] == true
-                          ? const Color(0xFFE5953D)
-                          : muted,
-                      fontSize: 12,
+            padding: const EdgeInsets.fromLTRB(8, 3, 8, 7),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final narrow = constraints.maxWidth < 390;
+                return Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 4,
+                  runSpacing: 0,
+                  children: [
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(48, 48),
+                        padding: const EdgeInsets.symmetric(horizontal: 9),
+                        foregroundColor: p['my_glow'] == true
+                            ? const Color(0xFFE5953D)
+                            : muted,
+                      ),
+                      onPressed: _busyAction == null
+                          ? () => _toggle('glow', p['my_glow'] != true)
+                          : null,
+                      icon: _busyAction == 'glow'
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              Icons.local_fire_department_outlined,
+                              color: p['my_glow'] == true
+                                  ? const Color(0xFFE5953D)
+                                  : muted,
+                              size: 19,
+                            ),
+                      label: Text(p['my_glow'] == true ? 'Unglow' : 'Glow'),
                     ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: _busy
-                      ? null
-                      : () => _toggle('piece', p['my_piece'] != true),
-                  icon: Icon(
-                    p['my_piece'] == true
-                        ? Icons.bookmark
-                        : Icons.bookmark_border,
-                    color: p['my_piece'] == true ? blue : muted,
-                    size: 19,
-                  ),
-                  label: Text(
-                    p['my_piece'] == true ? 'Piece kept' : 'Take Piece',
-                    style: TextStyle(
-                      color: p['my_piece'] == true ? blue : muted,
-                      fontSize: 12,
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(48, 48),
+                        padding: const EdgeInsets.symmetric(horizontal: 9),
+                      ),
+                      onPressed: _busyAction == null
+                          ? () => _toggle('piece', p['my_piece'] != true)
+                          : null,
+                      icon: _busyAction == 'piece'
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              p['my_piece'] == true
+                                  ? Icons.bookmark
+                                  : Icons.bookmark_border,
+                              color: p['my_piece'] == true ? blue : muted,
+                              size: 19,
+                            ),
+                      label: Text(
+                        p['my_piece'] == true ? 'Piece kept' : 'Take Piece',
+                      ),
                     ),
-                  ),
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: widget.onGallery,
-                  child: const Text(
-                    'View Mozaque',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ),
-              ],
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(48, 48),
+                        padding: const EdgeInsets.symmetric(horizontal: 9),
+                      ),
+                      onPressed: widget.onGallery,
+                      child: Text(narrow ? 'Mozaque' : 'View Mozaque'),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -3641,6 +3691,23 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
   }
 
+  Future<void> _glow(Map<String, dynamic> p, bool value) async {
+    await repo.glow(p['id'], value);
+    if (!mounted) return;
+    setState(() {
+      _photos = _photos.map((photo) {
+        if (photo['id'] != p['id']) return photo;
+        final count = (photo['glow_count'] as num?)?.toInt() ?? 0;
+        return {
+          ...photo,
+          'my_glow': value,
+          'glow_count': (count + (value ? 1 : -1)).clamp(0, 1000000),
+        };
+      }).toList();
+    });
+    unawaited(widget.onChanged());
+  }
+
   Future<void> _setCover(String photoId) async {
     try {
       await repo.setGalleryCoverPhoto(_gallery['id'], photoId);
@@ -3997,6 +4064,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                         (owner || p['uploader_id'] == _db.auth.currentUser?.id);
                     return _GalleryPhoto(
                       photo: p,
+                      onGlow: (value) => _glow(p, value),
                       onPiece: (v) => _piece(p, v),
                       isCover: p['id'] == _gallery['cover_photo_id'],
                       canSetCover: owner && _gallery['frozen_at'] == null,
@@ -4017,6 +4085,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
 class _GalleryPhoto extends StatefulWidget {
   const _GalleryPhoto({
     required this.photo,
+    required this.onGlow,
     required this.onPiece,
     required this.isCover,
     required this.canSetCover,
@@ -4025,6 +4094,7 @@ class _GalleryPhoto extends StatefulWidget {
     required this.onDelete,
   });
   final Map<String, dynamic> photo;
+  final Future<void> Function(bool) onGlow;
   final Future<void> Function(bool) onPiece;
   final bool isCover, canSetCover;
   final VoidCallback onSetCover;
@@ -4035,11 +4105,45 @@ class _GalleryPhoto extends StatefulWidget {
 }
 
 class _GalleryPhotoState extends State<_GalleryPhoto> {
-  bool _piece = false;
+  bool _piece = false, _glow = false, _glowing = false;
   @override
   void initState() {
     super.initState();
     _piece = widget.photo['my_piece'] == true;
+    _glow = widget.photo['my_glow'] == true;
+  }
+
+  @override
+  void didUpdateWidget(covariant _GalleryPhoto oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.photo['my_piece'] != widget.photo['my_piece']) {
+      _piece = widget.photo['my_piece'] == true;
+    }
+    if (oldWidget.photo['my_glow'] != widget.photo['my_glow']) {
+      _glow = widget.photo['my_glow'] == true;
+    }
+  }
+
+  Future<void> _toggleGlow() async {
+    if (_glowing) return;
+    final next = !_glow;
+    setState(() => _glowing = true);
+    try {
+      await widget.onGlow(next);
+      if (mounted) setState(() => _glow = next);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is PostgrestException ? e.message : 'Could not update Glow.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _glowing = false);
+    }
   }
 
   @override
@@ -4068,6 +4172,27 @@ class _GalleryPhotoState extends State<_GalleryPhoto> {
             spacing: 2,
             runSpacing: 0,
             children: [
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(48, 48),
+                  foregroundColor: _glow ? const Color(0xFFE5953D) : muted,
+                ),
+                onPressed: _glowing ? null : _toggleGlow,
+                icon: _glowing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        _glow
+                            ? Icons.local_fire_department
+                            : Icons.local_fire_department_outlined,
+                        color: _glow ? const Color(0xFFE5953D) : muted,
+                        size: 18,
+                      ),
+                label: Text(_glow ? 'Unglow' : 'Glow'),
+              ),
               TextButton.icon(
                 onPressed: () async {
                   final next = !_piece;
