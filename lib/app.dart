@@ -809,7 +809,7 @@ class _HomeShellState extends State<HomeShell> {
           _openGallery(g);
         }
       } else {
-        setState(() => _tab = 2);
+        setState(() => _tab = 3);
         _notice('You’re connected. You can now share privately on Mozaque.');
       }
     } catch (e) {
@@ -888,12 +888,12 @@ class _HomeShellState extends State<HomeShell> {
       if (savedLatest == null || _tab == 0) {
         await prefs.setInt(feedKey, latest);
       }
-      if (savedIds == null || _tab == 3) {
+      if (savedIds == null || _tab == 1) {
         await prefs.setStringList(galleryKey, sharedIds.toList());
       }
       return (
         feed: newFeed && (_tab == 0 || !_hasNewFeed),
-        mozaques: newMozaques && (_tab == 3 || !_hasNewMozaques),
+        mozaques: newMozaques && (_tab == 1 || !_hasNewMozaques),
       );
     } catch (_) {
       // Attention cues are best-effort; they must never prevent a feed refresh.
@@ -922,7 +922,7 @@ class _HomeShellState extends State<HomeShell> {
           'mozaque_seen_feed_$userId',
           _latestActivityMillis([..._feed, ..._notifications]),
         );
-      } else if (index == 3) {
+      } else if (index == 1) {
         final ids = _galleries
             .where((g) => g['owner_id']?.toString() != userId)
             .map((g) => g['id'].toString())
@@ -940,7 +940,7 @@ class _HomeShellState extends State<HomeShell> {
       _tab = index;
       _activeGallery = null;
       if (index == 0) _hasNewFeed = false;
-      if (index == 3) _hasNewMozaques = false;
+      if (index == 1) _hasNewMozaques = false;
     });
     unawaited(_markTabSeen(index));
   }
@@ -1043,7 +1043,7 @@ class _HomeShellState extends State<HomeShell> {
           _openGallery(g);
         }
       } else {
-        setState(() => _tab = 2);
+        setState(() => _tab = 3);
         _notice('You’re connected. You can now share privately on Mozaque.');
       }
     } catch (e) {
@@ -1483,6 +1483,13 @@ class _HomeShellState extends State<HomeShell> {
         onCreate: _create,
         onOpen: _openGallery,
       ),
+      _MemoryPage(
+        galleries: _galleries,
+        currentUserId: _db.auth.currentUser?.id ?? '',
+        onCreate: _create,
+        onJoin: _joinWithCode,
+        onOpen: _openGallery,
+      ),
       _PiecesPage(
         photos: _pieces,
         loading: _loading,
@@ -1496,13 +1503,6 @@ class _HomeShellState extends State<HomeShell> {
         onJoin: _joinWithCode,
         onRefresh: _load,
         onOpenProfile: _showConnectionProfile,
-      ),
-      _MemoryPage(
-        galleries: _galleries,
-        currentUserId: _db.auth.currentUser?.id ?? '',
-        onCreate: _create,
-        onJoin: _joinWithCode,
-        onOpen: _openGallery,
       ),
     ];
     return PopScope(
@@ -1554,16 +1554,6 @@ class _HomeShellState extends State<HomeShell> {
               label: 'Feed',
             ),
             NavigationDestination(
-              icon: Icon(Icons.bookmark_border),
-              selectedIcon: Icon(Icons.bookmark),
-              label: 'Pieces',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.people_outline),
-              selectedIcon: Icon(Icons.people),
-              label: 'People',
-            ),
-            NavigationDestination(
               icon: _AttentionNavIcon(
                 icon: Icons.photo_library_outlined,
                 pulseToken: _mozaquesPulse,
@@ -1576,9 +1566,19 @@ class _HomeShellState extends State<HomeShell> {
               ),
               label: 'Mozaques',
             ),
+            NavigationDestination(
+              icon: Icon(Icons.bookmark_border),
+              selectedIcon: Icon(Icons.bookmark),
+              label: 'Pieces',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.people_outline),
+              selectedIcon: Icon(Icons.people),
+              label: 'People',
+            ),
           ],
         ),
-        floatingActionButton: _activeGallery == null && (_tab == 0 || _tab == 3)
+        floatingActionButton: _activeGallery == null && (_tab == 0 || _tab == 1)
             ? MediaQuery.sizeOf(context).width < 600
                   ? FloatingActionButton(
                       tooltip: 'New Mozaque',
