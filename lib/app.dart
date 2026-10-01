@@ -1079,7 +1079,7 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
-  Future<void> _invite({String? galleryId}) async {
+  Future<void> _invite({String? galleryId, bool gentleNudge = false}) async {
     try {
       final code = await repo.invite(galleryId: galleryId);
       final sender = (_profile?['display_name'] as String?)?.trim();
@@ -1092,12 +1092,16 @@ class _HomeShellState extends State<HomeShell> {
           : _presentMozaqueTitle(gallery['title']?.toString() ?? 'my Mozaque');
       final subject = galleryId == null
           ? '$senderName would love to connect on Mozaque'
+          : gentleNudge
+          ? 'A gentle reminder about $galleryTitle'
           : 'An invitation from $senderName to $galleryTitle';
       // Use the live web app as the universal invite destination until the
       // native apps have verified iOS Universal Links / Android App Links.
       final joinLink = mozaqueInviteLink(code);
       final message = galleryId == null
           ? 'Hi — it’s $senderName. I’m using Mozaque to keep shared photos in a private place for people we know, and I’d love you to join my circle.\n\nJoin me here: $joinLink\n\nIf the link doesn’t open, enter this private code in People: $code\n\nThe invitation expires in seven days.'
+          : gentleNudge
+          ? 'Hi — just a gentle reminder from $senderName. I’ve made a private Mozaque for “$galleryTitle” and would still love you to join when you have a moment. No rush at all.\n\nJoin here: $joinLink\n\nIf the link doesn’t open, enter this private code in People: $code\n\nThis invitation expires in seven days.'
           : 'Hi — it’s $senderName. I’ve made a private Mozaque for “$galleryTitle” and would love you to be part of it. It’s a place for the photos and little moments we want to keep together.\n\nJoin “$galleryTitle”: $joinLink\n\nIf the link doesn’t open, enter this private code in People: $code\n\nThe invitation expires in seven days.';
       if (!mounted) return;
       final action = await showDialog<_InviteAction>(
@@ -1106,6 +1110,8 @@ class _HomeShellState extends State<HomeShell> {
           title: Text(
             galleryId == null
                 ? 'Invite to your circle'
+                : gentleNudge
+                ? 'Send a gentle reminder'
                 : 'Invite to $galleryTitle',
           ),
           content: SingleChildScrollView(
@@ -1113,8 +1119,10 @@ class _HomeShellState extends State<HomeShell> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Share this private invitation with someone you know. It expires in seven days.',
+                Text(
+                  gentleNudge
+                      ? 'Nothing is sent automatically. Choose whether to share this fresh private invite, and who to send it to. It expires in seven days.'
+                      : 'Share this private invitation with someone you know. It expires in seven days.',
                 ),
                 const SizedBox(height: 12),
                 SelectableText(message, style: const TextStyle(fontSize: 13)),
@@ -1253,6 +1261,7 @@ class _HomeShellState extends State<HomeShell> {
     );
     var avatarPath = _profile?['avatar_path'] as String?;
     var busy = false;
+    var memoryRemindersEnabled = _profile?['memory_reminders_enabled'] != false;
     String? error;
     String? deleteError;
     await showDialog<void>(
@@ -1356,6 +1365,43 @@ class _HomeShellState extends State<HomeShell> {
                   maxLength: 60,
                   textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(hintText: 'Your name'),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Echoes and anniversary reminders'),
+                  subtitle: const Text(
+                    'Resurface meaningful dates in your feed. You can turn this off any time.',
+                  ),
+                  value: memoryRemindersEnabled,
+                  onChanged: busy
+                      ? null
+                      : (enabled) async {
+                          setDialogState(() {
+                            busy = true;
+                            error = null;
+                          });
+                          try {
+                            await repo.setMemoryReminders(enabled);
+                            if (!mounted || !dialogContext.mounted) return;
+                            memoryRemindersEnabled = enabled;
+                            setState(() {
+                              _profile = {
+                                ...?_profile,
+                                'memory_reminders_enabled': enabled,
+                              };
+                            });
+                            await _load();
+                            setDialogState(() {});
+                          } catch (e) {
+                            if (dialogContext.mounted) {
+                              setDialogState(() => error = _message(e));
+                            }
+                          } finally {
+                            if (mounted && dialogContext.mounted) {
+                              setDialogState(() => busy = false);
+                            }
+                          }
+                        },
                 ),
                 const SizedBox(height: 8),
                 const Divider(),
@@ -1686,6 +1732,10 @@ class _HomeShellState extends State<HomeShell> {
                         gallery: _activeGallery!,
                         onInvite: () =>
                             _invite(galleryId: _activeGallery!['id']),
+                        onGentleNudge: () => _invite(
+                          galleryId: _activeGallery!['id'],
+                          gentleNudge: true,
+                        ),
                         onChanged: _load,
                         onBack: _closeGallery,
                         onPieceKept: _recordKeptPiece,
@@ -1888,10 +1938,13 @@ class _FeedPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final name =
         (profile?['display_name'] as String?)?.split(' ').first ?? 'friend';
-    final echoes = _echoes(galleries, feed);
+    final remindersEnabled = profile?['memory_reminders_enabled'] != false;
+    final echoes = remindersEnabled ? _echoes(galleries, feed) : const [];
     final showEventPreview =
         Uri.base.queryParameters['previewFeedEvents'] == '1';
-    final upcoming = _upcomingOccasions(galleries);
+    final upcoming = remindersEnabled
+        ? _upcomingOccasions(galleries)
+        : const [];
     final shared = galleries
         .where((g) => g['audience'] == 'connections')
         .toList();
@@ -3836,12 +3889,14 @@ class GalleryScreen extends StatefulWidget {
     super.key,
     required this.gallery,
     required this.onInvite,
+    required this.onGentleNudge,
     required this.onChanged,
     required this.onBack,
     required this.onPieceKept,
   });
   final Map<String, dynamic> gallery;
   final VoidCallback onInvite;
+  final VoidCallback onGentleNudge;
   final Future<void> Function() onChanged;
   final VoidCallback onBack;
   final Future<void> Function() onPieceKept;
@@ -4124,6 +4179,81 @@ class _GalleryScreenState extends State<GalleryScreen> {
           ),
         );
     }
+  }
+
+  Future<void> _editAddYoursPrompt() async {
+    final controller = TextEditingController(
+      text: _gallery['add_yours_prompt']?.toString() ?? '',
+    );
+    var saving = false;
+    String? error;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Your “Add yours” prompt'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Give everyone a simple idea for what to add. Leave it blank to use the default prompt.',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                maxLength: 140,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  hintText: 'What moment should everyone add?',
+                ),
+              ),
+              if (error != null)
+                Text(error!, style: const TextStyle(color: Color(0xFFB42318))),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      setDialogState(() => saving = true);
+                      try {
+                        final prompt = controller.text.trim();
+                        await repo.updateGallery(_gallery['id'], {
+                          'add_yours_prompt': prompt.isEmpty ? null : prompt,
+                        });
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext, true);
+                        }
+                      } catch (e) {
+                        if (dialogContext.mounted) {
+                          setDialogState(() {
+                            error = e is PostgrestException
+                                ? e.message
+                                : 'Could not save this prompt.';
+                            saving = false;
+                          });
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Save prompt'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (saved == true) await _load();
   }
 
   Future<void> _role(String id, String role) async {
@@ -4454,8 +4584,24 @@ class _GalleryScreenState extends State<GalleryScreen> {
             onSelected: (v) {
               if (v == 'preserve') _preserve();
               if (v == 'delete') _deleteGallery();
+              if (v == 'prompt') _editAddYoursPrompt();
+              if (v == 'nudge') widget.onGentleNudge();
             },
             itemBuilder: (_) => [
+              if (owner && _gallery['frozen_at'] == null)
+                PopupMenuItem(
+                  value: 'prompt',
+                  child: Text(
+                    (_gallery['add_yours_prompt'] as String?) == null
+                        ? 'Set “Add yours” prompt'
+                        : 'Edit “Add yours” prompt',
+                  ),
+                ),
+              if (owner && _gallery['frozen_at'] == null)
+                const PopupMenuItem(
+                  value: 'nudge',
+                  child: Text('Send a gentle invite'),
+                ),
               if (owner && _gallery['frozen_at'] == null)
                 const PopupMenuItem(
                   value: 'preserve',
@@ -4635,33 +4781,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                   ),
                                 ),
                               ],
-                              if (coverPhoto == null && _canUpload) ...[
-                                const SizedBox(height: 5),
-                                InkWell(
-                                  onTap: _uploading ? null : _upload,
-                                  child: const Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 3),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.add_photo_alternate_outlined,
-                                          color: Colors.white,
-                                          size: 17,
-                                        ),
-                                        SizedBox(width: 6),
-                                        Text(
-                                          'Add the first photos',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
                             ],
                           ),
                         ),
@@ -4807,6 +4926,88 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       ],
                     ),
                   ),
+                ],
+                if (_gallery['frozen_at'] == null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(15, 13, 13, 13),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEEF1FF),
+                      borderRadius: BorderRadius.circular(17),
+                      border: Border.all(color: const Color(0xFFDDE3FF)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(13),
+                          ),
+                          child: const Icon(
+                            Icons.add_photo_alternate_outlined,
+                            color: blue,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'ADD YOURS',
+                                style: TextStyle(
+                                  color: blue,
+                                  fontSize: 10,
+                                  letterSpacing: 1.1,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                (_gallery['add_yours_prompt'] as String?) ??
+                                    'Add a photo to this memory',
+                                style: const TextStyle(
+                                  color: ink,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (!_canUpload)
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 3),
+                                  child: Text(
+                                    'Ask the owner to let you add photos.',
+                                    style: TextStyle(
+                                      color: muted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (_canUpload)
+                          IconButton.filledTonal(
+                            tooltip: 'Add yours',
+                            onPressed: _uploading ? null : _upload,
+                            icon: const Icon(Icons.add, color: blue),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (owner && _photos.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: widget.onGentleNudge,
+                          icon: const Icon(Icons.forward_to_inbox_outlined),
+                          label: const Text('Send a gentle invite'),
+                        ),
+                      ),
+                    ),
                 ],
                 const SizedBox(height: 16),
                 Row(

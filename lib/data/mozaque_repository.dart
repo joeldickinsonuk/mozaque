@@ -15,10 +15,28 @@ class MozaqueRepository {
   final SupabaseClient db;
   String get uid => db.auth.currentUser!.id;
 
-  Future<Map<String, dynamic>?> profile() async =>
-      db.from('profiles').select().eq('id', uid).maybeSingle();
+  Future<Map<String, dynamic>?> profile() async {
+    final row = await db.from('profiles').select().eq('id', uid).maybeSingle();
+    if (row == null) return null;
+    final result = Map<String, dynamic>.from(row);
+    final preferences = await db
+        .from('user_preferences')
+        .select('memory_reminders_enabled')
+        .eq('user_id', uid)
+        .maybeSingle();
+    result['memory_reminders_enabled'] =
+        preferences?['memory_reminders_enabled'] ?? true;
+    return result;
+  }
+
   Future<void> saveName(String value) async =>
       db.from('profiles').update({'display_name': value.trim()}).eq('id', uid);
+
+  Future<void> setMemoryReminders(bool enabled) async =>
+      db.from('user_preferences').upsert({
+        'user_id': uid,
+        'memory_reminders_enabled': enabled,
+      }, onConflict: 'user_id');
 
   Future<String> saveAvatar({
     required Uint8List bytes,
