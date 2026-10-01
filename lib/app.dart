@@ -2612,9 +2612,12 @@ class _FeedPage extends StatelessWidget {
                     else if (feed.isEmpty)
                       _EmptyCard(
                         icon: Icons.photo_camera_back_outlined,
-                        title: 'Your feed is ready',
+                        title: 'Your moments, as they happen',
                         copy:
-                            'Create your first Mozaque, invite your people, and add a photo when you’re ready.',
+                            'Photos and thoughtful updates from the Mozaques you belong to come together here: new memories, comments, Glows, guestbook notes, and, in time, Echoes from years past.',
+                        details: const [
+                          'Only activity from Mozaques you can access appears here.',
+                        ],
                         action: 'Create a Mozaque',
                         onAction: onCreate,
                       )
@@ -3317,10 +3320,13 @@ class _PiecesPage extends StatelessWidget {
                   if (photos.isEmpty)
                     _EmptyCard(
                       icon: Icons.bookmark_border,
-                      title: 'Keep a piece',
-                      copy: 'Save a photo from any Mozaque and find it here.',
-                      onAction: onRefresh,
-                      action: loading ? 'Loading…' : 'Refresh',
+                      title: 'A few worth keeping',
+                      copy:
+                          'Keep a Piece from any photo to collect the moments you want to find again. Your collection brings those photos together across all your Mozaques.',
+                      details: const [
+                        'Open a photo and choose “Keep a Piece” to save it here.',
+                        'Your Piece is personal; the original stays in its Mozaque.',
+                      ],
                     )
                   else
                     ...photos.map(
@@ -3502,10 +3508,12 @@ class _ConnectionsPage extends StatelessWidget {
                   if (connections.isEmpty)
                     _EmptyCard(
                       icon: Icons.people_outline,
-                      title: 'Your circle starts here',
-                      copy: 'Invite someone you know to connect on Mozaque.',
-                      action: 'Invite someone',
-                      onAction: onInvite,
+                      title: 'Your circle, kept close',
+                      copy:
+                          'Connect with people you know, then invite them into the Mozaques you share. A connection alone never gives someone access to your photos—you choose who can see each gallery.',
+                      details: const [
+                        'Invite by email or personal link, or accept a connection request.',
+                      ],
                     )
                   else
                     ...connections.map(
@@ -4489,18 +4497,26 @@ class _MemoryPageState extends State<_MemoryPage> {
             if (visible.isEmpty && showingMine)
               _EmptyCard(
                 icon: Icons.photo_library_outlined,
-                title: 'Make a place for a memory',
+                title: 'A place for the people who were there',
                 copy:
-                    'A gathering, a birthday, a holiday, or an ordinary Tuesday.',
+                    'Create a private photo gallery for a birthday, a trip, a wedding, or an ordinary Tuesday. Invite the people who shared it, choose who can add photos, and keep the moment together.',
+                details: const [
+                  'Your Mozaques appear under “Created by you.”',
+                  'Galleries shared with you appear in their own list.',
+                ],
                 action: 'Create a Mozaque',
                 onAction: widget.onCreate,
               )
             else if (visible.isEmpty)
               _EmptyCard(
                 icon: Icons.mail_outline,
-                title: 'Shared Mozaques will find a home here',
+                title: 'Your shared galleries live here',
                 copy:
-                    'Open a private invite link or enter its code to join a Mozaque.',
+                    'When someone invites you to a Mozaque, it will be waiting here—a private gallery for photos and notes from a moment you shared.',
+                details: const [
+                  'Open an invite link or enter its code to join.',
+                  'You’ll only see galleries you’ve been invited to.',
+                ],
                 action: 'Enter invite code',
                 onAction: widget.onJoin,
               )
@@ -4758,11 +4774,13 @@ class _EmptyCard extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.copy,
+    this.details = const [],
     this.action,
     this.onAction,
   });
   final IconData icon;
   final String title, copy;
+  final List<String> details;
   final String? action;
   final VoidCallback? onAction;
   @override
@@ -4797,6 +4815,49 @@ class _EmptyCard extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(color: muted, fontSize: 13, height: 1.5),
             ),
+            if (details.isNotEmpty) ...[
+              const SizedBox(height: 17),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 15,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F8FC),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: details
+                      .map(
+                        (detail) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.only(top: 6, right: 9),
+                                child: Icon(Icons.circle, size: 6, color: blue),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  detail,
+                                  style: const TextStyle(
+                                    color: muted,
+                                    fontSize: 12,
+                                    height: 1.45,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ],
             if (action != null) ...[
               const SizedBox(height: 13),
               OutlinedButton(onPressed: onAction, child: Text(action!)),
