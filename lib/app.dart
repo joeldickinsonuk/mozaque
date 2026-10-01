@@ -25,7 +25,7 @@ const _typeLabels = {
 const _productDescription =
     'Share photos, notes and guestbook messages in private galleries with people you invite.';
 
-enum _InviteAction { copy, share, email }
+enum _InviteAction { copy, share, email, profileLink }
 
 class MozaqueApp extends StatelessWidget {
   const MozaqueApp({super.key, required this.configured});
@@ -1340,6 +1340,65 @@ class _HomeShellState extends State<HomeShell> {
                 ),
                 const SizedBox(height: 12),
                 SelectableText(message, style: const TextStyle(fontSize: 13)),
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(13),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F6FC),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE5E8F2)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'CONNECT FIRST',
+                        style: TextStyle(
+                          color: muted,
+                          letterSpacing: 1.1,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 10,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        _profile?['profile_slug']?.toString().isNotEmpty == true
+                            ? mozaqueProfileLink(
+                                _profile!['profile_slug'].toString(),
+                              )
+                            : 'Create your personal link in your profile settings.',
+                        style: const TextStyle(color: ink, fontSize: 13),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'They can request to connect with you. This link does not give them access to this Mozaque.',
+                        style: TextStyle(
+                          color: muted,
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () => Navigator.pop(
+                            dialogContext,
+                            _InviteAction.profileLink,
+                          ),
+                          icon: const Icon(Icons.person_add_alt_1),
+                          label: Text(
+                            _profile?['profile_slug']?.toString().isNotEmpty ==
+                                    true
+                                ? 'Share connection link'
+                                : 'Set up connection link',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -1369,7 +1428,10 @@ class _HomeShellState extends State<HomeShell> {
         ),
       );
       if (!mounted || action == null) return;
-      if (action == _InviteAction.copy) {
+      if (action == _InviteAction.profileLink) {
+        await _shareMyProfile();
+        return;
+      } else if (action == _InviteAction.copy) {
         await Clipboard.setData(ClipboardData(text: message));
         _notice('Invitation copied. Paste it into a message or email.');
       } else if (action == _InviteAction.email) {
