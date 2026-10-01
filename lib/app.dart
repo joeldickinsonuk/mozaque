@@ -3502,7 +3502,11 @@ class _GalleryPhotoState extends State<_GalleryPhoto> {
           ),
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 0, 8, 3),
-          child: Row(
+          child: Wrap(
+            alignment: WrapAlignment.start,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 2,
+            runSpacing: 0,
             children: [
               TextButton.icon(
                 onPressed: () async {
@@ -3536,10 +3540,12 @@ class _GalleryPhotoState extends State<_GalleryPhoto> {
                     foregroundColor: Colors.redAccent,
                   ),
                 ),
-              const Spacer(),
-              Text(
-                '${widget.photo['profiles']?['display_name'] ?? 'Someone'}',
-                style: const TextStyle(color: muted, fontSize: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  '${widget.photo['profiles']?['display_name'] ?? 'Someone'}',
+                  style: const TextStyle(color: muted, fontSize: 12),
+                ),
               ),
             ],
           ),
