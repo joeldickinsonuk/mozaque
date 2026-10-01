@@ -4782,6 +4782,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   bool _loading = true, _uploading = false, _addingPeople = false;
   bool _deleting = false;
   bool _canUpload = false;
+  bool _isPublicProfileGallery = false;
   String? _error;
   double? _uploadProgress;
   int _uploadingIndex = 0, _uploadingTotal = 0;
@@ -4798,6 +4799,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
     try {
       _gallery = await repo.gallery(_gallery['id']);
       _canUpload = await repo.canUpload(_gallery);
+      if (_gallery['owner_id'] == _db.auth.currentUser?.id) {
+        final profile = await repo.profile();
+        _isPublicProfileGallery =
+            profile?['public_gallery_id']?.toString() ==
+            _gallery['id']?.toString();
+      }
       _photos = await repo.photos(galleryId: _gallery['id']);
       _members = await repo.members(_gallery['id']);
       setState(() => _error = null);
@@ -4809,6 +4816,52 @@ class _GalleryScreenState extends State<GalleryScreen> {
       );
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _setPublicProfileGallery(bool makePublic) async {
+    if (makePublic) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Show this Mozaque publicly?'),
+          content: const Text(
+            'Anyone with your personal profile link will be able to view this '
+            'Mozaque’s details and photos. They can’t comment, Glow, or keep '
+            'Pieces. You can turn this off at any time.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Show publicly'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    try {
+      await repo.setPublicGallery(makePublic ? _gallery['id'] as String : null);
+      if (!mounted) return;
+      setState(() => _isPublicProfileGallery = makePublic);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            makePublic
+                ? 'This Mozaque now appears on your public profile.'
+                : 'This Mozaque is private again.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update public profile: $error')),
+      );
     }
   }
 
@@ -5676,6 +5729,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       tilePadding: const EdgeInsets.symmetric(horizontal: 16),
                       childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                       children: [
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: _isPublicProfileGallery,
+                          title: const Text('Show on my public profile'),
+                          subtitle: const Text(
+                            'Anyone with your profile link can view this Mozaque’s details and photos. Visitors can’t comment, Glow, or keep Pieces. Only one Mozaque can be public at a time.',
+                          ),
+                          onChanged: (value) => _setPublicProfileGallery(value),
+                        ),
                         if (_gallery['audience'] == 'invited' &&
                             _gallery['frozen_at'] == null)
                           Align(
