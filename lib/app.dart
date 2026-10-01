@@ -2357,6 +2357,7 @@ class _PhotoCardState extends State<_PhotoCard> {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final narrow = constraints.maxWidth < 390;
+                final glowCount = (p['glow_count'] as num?)?.toInt() ?? 0;
                 return Wrap(
                   alignment: WrapAlignment.spaceBetween,
                   crossAxisAlignment: WrapCrossAlignment.center,
@@ -2387,9 +2388,8 @@ class _PhotoCardState extends State<_PhotoCard> {
                                   : muted,
                               size: 19,
                             ),
-                      label: Text(p['my_glow'] == true ? 'Unglow' : 'Glow'),
+                      label: Text(glowCount == 0 ? 'Glow' : '$glowCount'),
                     ),
-                    _GlowCount(count: p['glow_count']),
                     TextButton.icon(
                       style: TextButton.styleFrom(
                         minimumSize: const Size(48, 48),
@@ -2565,42 +2565,6 @@ class _AvatarState extends State<_Avatar> {
               errorBuilder: (_, __, ___) => fallback,
             );
           },
-        ),
-      ),
-    );
-  }
-}
-
-class _GlowCount extends StatelessWidget {
-  const _GlowCount({required this.count});
-  final dynamic count;
-
-  @override
-  Widget build(BuildContext context) {
-    final total = (count as num?)?.toInt() ?? 0;
-    if (total < 1) return const SizedBox.shrink();
-    return Semantics(
-      label: '$total ${total == 1 ? 'Glow' : 'Glows'}',
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 5),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.local_fire_department,
-              color: Color(0xFFE5953D),
-              size: 16,
-            ),
-            const SizedBox(width: 3),
-            Text(
-              '$total',
-              style: const TextStyle(
-                color: Color(0xFF8A5A26),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -4942,103 +4906,107 @@ class _GalleryPhotoState extends State<_GalleryPhoto> {
   }
 
   @override
-  Widget build(BuildContext context) => Card(
-    clipBehavior: Clip.antiAlias,
-    margin: const EdgeInsets.only(bottom: 11),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        LayoutBuilder(
-          builder: (context, constraints) => _PhotoImage(
-            path: widget.photo['storage_path'],
-            height: (constraints.maxWidth * .68).clamp(260, 600).toDouble(),
+  Widget build(BuildContext context) {
+    final glowCount = (widget.photo['glow_count'] as num?)?.toInt() ?? 0;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      margin: const EdgeInsets.only(bottom: 11),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) => _PhotoImage(
+              path: widget.photo['storage_path'],
+              height: (constraints.maxWidth * .68).clamp(260, 600).toDouble(),
+            ),
           ),
-        ),
-        if ((widget.photo['caption'] as String).isNotEmpty)
+          if ((widget.photo['caption'] as String).isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(13, 9, 13, 0),
+              child: Text(widget.photo['caption']),
+            ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(13, 9, 13, 0),
-            child: Text(widget.photo['caption']),
-          ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 8, 3),
-          child: Wrap(
-            alignment: WrapAlignment.start,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 2,
-            runSpacing: 0,
-            children: [
-              TextButton.icon(
-                onPressed: widget.onNotes,
-                icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                label: const Text('Notes'),
-              ),
-              TextButton.icon(
-                style: TextButton.styleFrom(
-                  minimumSize: const Size(48, 48),
-                  foregroundColor: _glow ? const Color(0xFFE5953D) : muted,
-                ),
-                onPressed: _glowing ? null : _toggleGlow,
-                icon: _glowing
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        _glow
-                            ? Icons.local_fire_department
-                            : Icons.local_fire_department_outlined,
-                        color: _glow ? const Color(0xFFE5953D) : muted,
-                        size: 18,
-                      ),
-                label: Text(_glow ? 'Unglow' : 'Glow'),
-              ),
-              _GlowCount(count: widget.photo['glow_count']),
-              TextButton.icon(
-                onPressed: () async {
-                  final next = !_piece;
-                  await widget.onPiece(next);
-                  if (mounted) setState(() => _piece = next);
-                },
-                icon: Icon(
-                  _piece ? Icons.bookmark : Icons.bookmark_border,
-                  size: 18,
-                ),
-                label: Text(_piece ? 'Kept' : 'Keep a Piece'),
-              ),
-              if (widget.canSetCover)
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 3),
+            child: Wrap(
+              alignment: WrapAlignment.start,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 2,
+              runSpacing: 0,
+              children: [
                 TextButton.icon(
-                  onPressed: widget.isCover ? null : widget.onSetCover,
+                  onPressed: widget.onNotes,
+                  icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                  label: const Text('Notes'),
+                ),
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    foregroundColor: _glow ? const Color(0xFFE5953D) : muted,
+                  ),
+                  onPressed: _glowing ? null : _toggleGlow,
+                  icon: _glowing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          _glow
+                              ? Icons.local_fire_department
+                              : Icons.local_fire_department_outlined,
+                          color: _glow ? const Color(0xFFE5953D) : muted,
+                          size: 18,
+                        ),
+                  label: Text(glowCount == 0 ? 'Glow' : '$glowCount'),
+                ),
+                TextButton.icon(
+                  onPressed: () async {
+                    final next = !_piece;
+                    await widget.onPiece(next);
+                    if (mounted) setState(() => _piece = next);
+                  },
                   icon: Icon(
-                    widget.isCover
-                        ? Icons.check_circle_outline
-                        : Icons.photo_outlined,
+                    _piece ? Icons.bookmark : Icons.bookmark_border,
                     size: 18,
                   ),
-                  label: Text(widget.isCover ? 'Cover photo' : 'Use as cover'),
+                  label: Text(_piece ? 'Kept' : 'Keep a Piece'),
                 ),
-              if (widget.canDelete)
-                TextButton.icon(
-                  onPressed: widget.onDelete,
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('Delete photo'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.redAccent,
+                if (widget.canSetCover)
+                  TextButton.icon(
+                    onPressed: widget.isCover ? null : widget.onSetCover,
+                    icon: Icon(
+                      widget.isCover
+                          ? Icons.check_circle_outline
+                          : Icons.photo_outlined,
+                      size: 18,
+                    ),
+                    label: Text(
+                      widget.isCover ? 'Cover photo' : 'Use as cover',
+                    ),
+                  ),
+                if (widget.canDelete)
+                  TextButton.icon(
+                    onPressed: widget.onDelete,
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('Delete photo'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.redAccent,
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    '${widget.photo['profiles']?['display_name'] ?? 'Someone'}',
+                    style: const TextStyle(color: muted, fontSize: 12),
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  '${widget.photo['profiles']?['display_name'] ?? 'Someone'}',
-                  style: const TextStyle(color: muted, fontSize: 12),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
 
 class _GalleryHeroTag extends StatelessWidget {
