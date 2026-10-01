@@ -1859,6 +1859,24 @@ class _FeedPage extends StatelessWidget {
                           detail = 'In $galleryName · $date';
                           icon = Icons.local_fire_department_outlined;
                           accent = const Color(0xFFE5953D);
+                        case 'photo_note':
+                          kind = 'PHOTO NOTE';
+                          title = '$actor left a note on a photo';
+                          detail = '“$detailText” · In “$galleryName” · $date';
+                          icon = Icons.chat_bubble_outline;
+                          accent = const Color(0xFF8B62D8);
+                        case 'guestbook_message':
+                          kind = 'GUESTBOOK';
+                          title = '$actor left a guestbook message';
+                          detail = '“$detailText” · In “$galleryName” · $date';
+                          icon = Icons.menu_book_outlined;
+                          accent = const Color(0xFF3A9B8B);
+                        case 'guestbook_reply':
+                          kind = 'GUESTBOOK REPLY';
+                          title = '$actor replied in the guestbook';
+                          detail = '“$detailText” · In “$galleryName” · $date';
+                          icon = Icons.reply_outlined;
+                          accent = const Color(0xFF3A9B8B);
                         case 'member_added':
                           kind = 'NEW MOZAQUE';
                           title = 'You were added to a Mozaque';
