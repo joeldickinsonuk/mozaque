@@ -3727,6 +3727,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   late Map<String, dynamic> _gallery;
   List<Map<String, dynamic>> _photos = [], _members = [];
   bool _loading = true, _uploading = false, _addingPeople = false;
+  bool _deleting = false;
   bool _canUpload = false;
   String? _error;
   @override
@@ -3897,6 +3898,55 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ),
           ),
         );
+    }
+  }
+
+  Future<void> _deleteGallery() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete this Mozaque?'),
+        content: const Text(
+          'This permanently deletes the gallery, its photos, comments, guestbook, and invitations for everyone. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep Mozaque'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB34842),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete permanently'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _deleting = true);
+    try {
+      await repo.deleteGallery(_gallery['id'] as String);
+      if (mounted) widget.onBack();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e is PostgrestException
+                  ? e.message
+                  : e is StorageException
+                  ? e.message
+                  : e is StateError
+                  ? e.message.toString()
+                  : 'Could not delete this Mozaque. Please try again.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deleting = false);
     }
   }
 
@@ -4235,14 +4285,31 @@ class _GalleryScreenState extends State<GalleryScreen> {
               icon: const Icon(Icons.person_add_alt_1),
             ),
           PopupMenuButton<String>(
+            enabled: !_deleting,
+            icon: _deleting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.more_vert),
             onSelected: (v) {
               if (v == 'preserve') _preserve();
+              if (v == 'delete') _deleteGallery();
             },
             itemBuilder: (_) => [
               if (owner && _gallery['frozen_at'] == null)
                 const PopupMenuItem(
                   value: 'preserve',
                   child: Text('Preserve this Mozaque'),
+                ),
+              if (owner)
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Text(
+                    'Delete Mozaque',
+                    style: TextStyle(color: Color(0xFFB34842)),
+                  ),
                 ),
               const PopupMenuItem(
                 enabled: false,

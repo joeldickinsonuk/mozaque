@@ -402,6 +402,41 @@ class MozaqueRepository {
     }
   }
 
+  Future<void> deleteGallery(String galleryId) async {
+    final rows = await db
+        .from('photos')
+        .select('storage_path')
+        .eq('gallery_id', galleryId);
+    final paths = rows
+        .map((row) => row['storage_path'] as String)
+        .toList(growable: false);
+
+    // This owner-only row temporarily blocks new uploads and authorizes
+    // cleanup of stored images, including images in a preserved Mozaque.
+    await db
+        .from('gallery_deletion_requests')
+        .upsert(
+          {'gallery_id': galleryId, 'owner_id': uid},
+          onConflict: 'gallery_id',
+          ignoreDuplicates: true,
+        );
+
+    for (var start = 0; start < paths.length; start += 100) {
+      final end = (start + 100).clamp(0, paths.length).toInt();
+      await db.storage.from('mozaque-photos').remove(paths.sublist(start, end));
+    }
+
+    final deleted = await db
+        .from('galleries')
+        .delete()
+        .eq('id', galleryId)
+        .eq('owner_id', uid)
+        .select('id');
+    if (deleted.isEmpty) {
+      throw StateError('Only the Mozaque owner can delete this gallery.');
+    }
+  }
+
   Future<int> glowCount(String photoId) async =>
       (await db.from('glows').select('photo_id').eq('photo_id', photoId))
           .length;
