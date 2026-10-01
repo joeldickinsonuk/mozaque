@@ -1345,6 +1345,55 @@ class _HomeShellState extends State<HomeShell> {
     controller.dispose();
   }
 
+  Future<void> _showConnectionProfile(Map<String, dynamic> person) =>
+      showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (sheetContext) => Container(
+          padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
+          decoration: const BoxDecoration(
+            color: paper,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _Avatar(
+                  name: person['display_name']?.toString() ?? '?',
+                  path: person['avatar_path'] as String?,
+                  size: 104,
+                ),
+                const SizedBox(height: 15),
+                Text(
+                  person['display_name']?.toString() ?? 'Mozaque member',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'serif',
+                    fontSize: 28,
+                    color: ink,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                const Text(
+                  'Connected privately',
+                  style: TextStyle(color: muted),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    child: const Text('Done'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -1371,6 +1420,7 @@ class _HomeShellState extends State<HomeShell> {
         onInvite: () => _invite(),
         onJoin: _joinWithCode,
         onRefresh: _load,
+        onOpenProfile: _showConnectionProfile,
       ),
       _MemoryPage(
         galleries: _galleries,
@@ -2246,6 +2296,7 @@ class _PhotoCardState extends State<_PhotoCard> {
                             ),
                       label: Text(p['my_glow'] == true ? 'Unglow' : 'Glow'),
                     ),
+                    _GlowCount(count: p['glow_count']),
                     TextButton.icon(
                       style: TextButton.styleFrom(
                         minimumSize: const Size(48, 48),
@@ -2427,6 +2478,42 @@ class _AvatarState extends State<_Avatar> {
   }
 }
 
+class _GlowCount extends StatelessWidget {
+  const _GlowCount({required this.count});
+  final dynamic count;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = (count as num?)?.toInt() ?? 0;
+    if (total < 1) return const SizedBox.shrink();
+    return Semantics(
+      label: '$total ${total == 1 ? 'Glow' : 'Glows'}',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.local_fire_department,
+              color: Color(0xFFE5953D),
+              size: 16,
+            ),
+            const SizedBox(width: 3),
+            Text(
+              '$total',
+              style: const TextStyle(
+                color: Color(0xFF8A5A26),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _PiecesPage extends StatelessWidget {
   const _PiecesPage({
     required this.photos,
@@ -2498,10 +2585,12 @@ class _ConnectionsPage extends StatelessWidget {
     required this.onInvite,
     required this.onJoin,
     required this.onRefresh,
+    required this.onOpenProfile,
   });
   final List<Map<String, dynamic>> connections;
   final VoidCallback onInvite, onJoin;
   final Future<void> Function() onRefresh;
+  final ValueChanged<Map<String, dynamic>> onOpenProfile;
   @override
   Widget build(BuildContext context) => RefreshIndicator(
     onRefresh: onRefresh,
@@ -2559,12 +2648,14 @@ class _ConnectionsPage extends StatelessWidget {
         else
           ...connections.map(
             (c) => ListTile(
+              onTap: () => onOpenProfile(c),
               leading: _Avatar(
                 name: c['display_name'] ?? '?',
                 path: c['avatar_path'] as String?,
               ),
               title: Text(c['display_name'] ?? 'Mozaque member'),
               subtitle: const Text('Connected privately'),
+              trailing: const Icon(Icons.chevron_right, color: muted),
             ),
           ),
       ],
@@ -4193,6 +4284,7 @@ class _GalleryPhotoState extends State<_GalleryPhoto> {
                       ),
                 label: Text(_glow ? 'Unglow' : 'Glow'),
               ),
+              _GlowCount(count: widget.photo['glow_count']),
               TextButton.icon(
                 onPressed: () async {
                   final next = !_piece;
