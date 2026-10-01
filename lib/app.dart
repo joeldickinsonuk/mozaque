@@ -2052,7 +2052,7 @@ class _ConnectionsPage extends StatelessWidget {
   );
 }
 
-class _MemoryPage extends StatelessWidget {
+class _MemoryPage extends StatefulWidget {
   const _MemoryPage({
     required this.galleries,
     required this.currentUserId,
@@ -2065,16 +2065,88 @@ class _MemoryPage extends StatelessWidget {
   final VoidCallback onCreate, onJoin;
   final ValueChanged<Map<String, dynamic>> onOpen;
   @override
+  State<_MemoryPage> createState() => _MemoryPageState();
+}
+
+class _MemoryPageState extends State<_MemoryPage> {
+  int _selected = 0;
+
+  @override
   Widget build(BuildContext context) {
-    final mine = galleries
-        .where((g) => g['owner_id'] == currentUserId)
+    final mine = widget.galleries
+        .where((g) => g['owner_id'] == widget.currentUserId)
         .toList();
     // The galleries query is already filtered by Supabase RLS. Include every
     // visible gallery owned by someone else, even when access comes from the
     // owner's connections rather than a direct gallery_members row.
-    final shared = galleries
-        .where((g) => g['owner_id'] != currentUserId)
+    final shared = widget.galleries
+        .where((g) => g['owner_id'] != widget.currentUserId)
         .toList();
+    final showingMine = _selected == 0;
+    final visible = showingMine ? mine : shared;
+
+    Widget tab({
+      required int index,
+      required String label,
+      required int count,
+    }) {
+      final active = _selected == index;
+      return Expanded(
+        child: Semantics(
+          button: true,
+          selected: active,
+          label: '$label, $count',
+          child: InkWell(
+            onTap: () => setState(() => _selected = index),
+            borderRadius: BorderRadius.circular(13),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 11),
+              decoration: BoxDecoration(
+                color: active ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(13),
+                boxShadow: active
+                    ? const [
+                        BoxShadow(
+                          color: Color(0x120F1B3D),
+                          blurRadius: 7,
+                          offset: Offset(0, 2),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: active ? ink : muted,
+                        fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '$count',
+                    style: TextStyle(
+                      color: active ? blue : muted,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 940),
@@ -2095,42 +2167,54 @@ class _MemoryPage extends StatelessWidget {
               'Your Mozaques',
               style: TextStyle(fontFamily: 'serif', fontSize: 34, color: ink),
             ),
-            const SizedBox(height: 23),
-            _CollectionHeading(title: 'Created by you', count: mine.length),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFECEEF5),
+                borderRadius: BorderRadius.circular(17),
+              ),
+              child: Row(
+                children: [
+                  tab(index: 0, label: 'Created by you', count: mine.length),
+                  tab(index: 1, label: 'Shared with you', count: shared.length),
+                ],
+              ),
+            ),
+            const SizedBox(height: 17),
+            _CollectionHeading(
+              title: showingMine ? 'Created by you' : 'Shared with you',
+              count: visible.length,
+            ),
+            if (!showingMine) ...[
+              const SizedBox(height: 5),
+              const Text(
+                'Private Mozaques shared with you by invitation or through your circle.',
+                style: TextStyle(color: muted, fontSize: 12),
+              ),
+            ],
             const SizedBox(height: 11),
-            if (mine.isEmpty)
+            if (visible.isEmpty && showingMine)
               _EmptyCard(
                 icon: Icons.photo_library_outlined,
                 title: 'Make a place for a memory',
                 copy:
                     'A gathering, a birthday, a holiday, or an ordinary Tuesday.',
                 action: 'Create a Mozaque',
-                onAction: onCreate,
+                onAction: widget.onCreate,
               )
-            else
-              ...mine.map(
-                (g) => _GalleryCard(gallery: g, onTap: () => onOpen(g)),
-              ),
-            const SizedBox(height: 21),
-            _CollectionHeading(title: 'Shared with you', count: shared.length),
-            const SizedBox(height: 5),
-            const Text(
-              'Private Mozaques shared with you by invitation or through your circle.',
-              style: TextStyle(color: muted, fontSize: 12),
-            ),
-            const SizedBox(height: 11),
-            if (shared.isEmpty)
+            else if (visible.isEmpty)
               _EmptyCard(
                 icon: Icons.mail_outline,
                 title: 'Shared Mozaques will find a home here',
                 copy:
                     'Open a private invite link or enter its code to join a Mozaque.',
                 action: 'Enter invite code',
-                onAction: onJoin,
+                onAction: widget.onJoin,
               )
             else
-              ...shared.map(
-                (g) => _GalleryCard(gallery: g, onTap: () => onOpen(g)),
+              ...visible.map(
+                (g) => _GalleryCard(gallery: g, onTap: () => widget.onOpen(g)),
               ),
           ],
         ),
