@@ -241,6 +241,7 @@ class _SharedProfileLandingState extends State<_SharedProfileLanding> {
                             }
                             return _PublicProfileGalleriesView(
                               galleries: galleries,
+                              slug: widget.slug,
                             );
                           },
                         ),
@@ -1177,6 +1178,7 @@ class _HomeShellState extends State<HomeShell> {
         builder: (sheetContext) => _SharedProfileSheet(
           profile: profile,
           publicGalleries: showcases,
+          slug: slug,
           initialStatus: status,
           onConnect: () async {
             final result = await repo.requestConnectionBySlug(slug);
@@ -3504,11 +3506,13 @@ class _SharedProfileSheet extends StatefulWidget {
   const _SharedProfileSheet({
     required this.profile,
     required this.publicGalleries,
+    required this.slug,
     required this.initialStatus,
     required this.onConnect,
   });
   final Map<String, dynamic> profile;
   final List<Map<String, dynamic>> publicGalleries;
+  final String slug;
   final String initialStatus;
   final Future<String> Function() onConnect;
 
@@ -3599,6 +3603,7 @@ class _SharedProfileSheetState extends State<_SharedProfileSheet> {
                 const SizedBox(height: 16),
                 _PublicProfileGalleriesView(
                   galleries: widget.publicGalleries,
+                  slug: widget.slug,
                   compact: true,
                 ),
               ],
@@ -3635,130 +3640,359 @@ class _SharedProfileSheetState extends State<_SharedProfileSheet> {
 class _PublicProfileGalleriesView extends StatelessWidget {
   const _PublicProfileGalleriesView({
     required this.galleries,
+    required this.slug,
     this.compact = false,
   });
   final List<Map<String, dynamic>> galleries;
+  final String slug;
   final bool compact;
 
   @override
   Widget build(BuildContext context) => Column(
     children: [
-      for (final gallery in galleries) ...[
-        _PublicProfileGalleryView(gallery: gallery, compact: compact),
-        if (gallery != galleries.last) const SizedBox(height: 14),
+      for (var index = 0; index < galleries.length; index++) ...[
+        _PublicProfileGalleryBanner(
+          gallery: galleries[index],
+          compact: compact,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              fullscreenDialog: true,
+              builder: (_) => _PublicProfileGalleryDetailPage(
+                slug: slug,
+                summary: galleries[index],
+              ),
+            ),
+          ),
+        ),
+        if (index + 1 < galleries.length) const SizedBox(height: 14),
       ],
     ],
   );
 }
 
-class _PublicProfileGalleryView extends StatelessWidget {
-  const _PublicProfileGalleryView({
+class _PublicProfileGalleryBanner extends StatelessWidget {
+  const _PublicProfileGalleryBanner({
     required this.gallery,
+    required this.onTap,
     this.compact = false,
   });
   final Map<String, dynamic> gallery;
+  final VoidCallback? onTap;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final rawPhotos = gallery['photos'];
-    final photos = rawPhotos is List
-        ? rawPhotos
-              .whereType<Map>()
-              .map((photo) => Map<String, dynamic>.from(photo))
-              .toList()
-        : <Map<String, dynamic>>[];
-    final shownPhotos = compact ? photos.take(3) : photos;
     final photoCount =
-        int.tryParse(gallery['photo_count']?.toString() ?? '') ?? photos.length;
+        int.tryParse(gallery['photo_count']?.toString() ?? '') ?? 0;
     final date = DateTime.tryParse(gallery['event_date']?.toString() ?? '');
     final eventType = _typeLabels[gallery['event_type']] ?? 'Mozaque';
+    final coverPath = gallery['cover_storage_path']?.toString();
+    final height = compact ? 132.0 : 190.0;
 
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(compact ? 12 : 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE7E9F1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          height: height,
+          width: double.infinity,
+          child: Stack(
+            fit: StackFit.expand,
             children: [
-              const Icon(Icons.public, size: 16, color: blue),
-              const SizedBox(width: 6),
-              const Expanded(
-                child: Text(
-                  'PUBLIC GALLERY',
-                  style: TextStyle(
-                    color: muted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1,
+              if (coverPath == null || coverPath.isEmpty)
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [_colorFor(gallery['title']), ink],
+                    ),
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.photo_library_outlined,
+                      size: 50,
+                      color: Color(0xA6FFFFFF),
+                    ),
+                  ),
+                )
+              else
+                _PublicPhotoCover(path: coverPath),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x1A10172B), Color(0xD910172B)],
                   ),
                 ),
               ),
-              Text(
-                date == null
-                    ? eventType
-                    : '$eventType · ${_months[date.month - 1]} ${date.day}, ${date.year}',
-                style: const TextStyle(color: muted, fontSize: 11),
+              Positioned(
+                top: 12,
+                left: 14,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(.28),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withOpacity(.28)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.public, size: 13, color: Colors.white),
+                      SizedBox(width: 5),
+                      Text(
+                        'PUBLIC MOZAQUE',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: .8,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 16,
+                right: 14,
+                bottom: 12,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            gallery['title']?.toString() ?? 'Shared memories',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'serif',
+                              fontSize: compact ? 19 : 24,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '$eventType${date == null ? '' : ' · ${_months[date.month - 1]} ${date.day}, ${date.year}'} · $photoCount ${photoCount == 1 ? 'photo' : 'photos'}',
+                            style: const TextStyle(
+                              color: Color(0xFFE7EAF4),
+                              fontSize: 12,
+                            ),
+                          ),
+                          if ((gallery['description']?.toString() ?? '')
+                              .trim()
+                              .isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              gallery['description'].toString(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFFE7EAF4),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (onTap != null)
+                      const Icon(
+                        Icons.arrow_forward_rounded,
+                        color: Colors.white,
+                        size: 21,
+                      ),
+                  ],
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 7),
-          Text(
-            gallery['title']?.toString() ?? 'Shared memories',
-            style: const TextStyle(
-              fontFamily: 'serif',
-              fontSize: 21,
-              color: ink,
-            ),
-          ),
-          if ((gallery['description']?.toString() ?? '').trim().isNotEmpty) ...[
-            const SizedBox(height: 3),
-            Text(
-              gallery['description'].toString(),
-              style: const TextStyle(color: muted, height: 1.4),
-            ),
-          ],
-          if (photos.isEmpty) ...[
-            const SizedBox(height: 14),
-            const Text(
-              'Photos will appear here when they’re added.',
-              style: TextStyle(color: muted, fontSize: 13),
-            ),
-          ] else ...[
-            const SizedBox(height: 12),
-            ...shownPhotos.map((photo) => _PublicProfilePhoto(photo: photo)),
-            if (compact && photoCount > shownPhotos.length)
-              Padding(
-                padding: const EdgeInsets.only(top: 5),
-                child: Text(
-                  'And ${photoCount - shownPhotos.length} more photos',
-                  style: const TextStyle(color: muted, fontSize: 12),
-                ),
-              ),
-            if (!compact && photoCount > photos.length)
-              Padding(
-                padding: const EdgeInsets.only(top: 5),
-                child: Text(
-                  'Showing the latest ${photos.length} of $photoCount photos.',
-                  style: const TextStyle(color: muted, fontSize: 12),
-                ),
-              ),
-          ],
-          const SizedBox(height: 10),
-          const Text(
-            'View-only for visitors · Comments and reactions are for Mozaque members.',
-            style: TextStyle(color: muted, fontSize: 11, height: 1.4),
-          ),
-        ],
+        ),
       ),
     );
   }
+}
+
+class _PublicPhotoCover extends StatelessWidget {
+  const _PublicPhotoCover({required this.path});
+  final String path;
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<String>(
+    future: repo.publicPhotoUrl(path),
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return const ColoredBox(
+          color: Color(0xFFF3F4F8),
+          child: Icon(Icons.broken_image_outlined, color: muted),
+        );
+      }
+      if (!snapshot.hasData) {
+        return const ColoredBox(
+          color: Color(0xFFF3F4F8),
+          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        );
+      }
+      return Image.network(
+        snapshot.data!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => const ColoredBox(
+          color: Color(0xFFF3F4F8),
+          child: Icon(Icons.broken_image_outlined, color: muted),
+        ),
+      );
+    },
+  );
+}
+
+class _PublicProfileGalleryDetailPage extends StatefulWidget {
+  const _PublicProfileGalleryDetailPage({
+    required this.slug,
+    required this.summary,
+  });
+  final String slug;
+  final Map<String, dynamic> summary;
+
+  @override
+  State<_PublicProfileGalleryDetailPage> createState() =>
+      _PublicProfileGalleryDetailPageState();
+}
+
+class _PublicProfileGalleryDetailPageState
+    extends State<_PublicProfileGalleryDetailPage> {
+  late Future<Map<String, dynamic>?> _details;
+
+  @override
+  void initState() {
+    super.initState();
+    _details = repo.publicProfileGalleryDetail(
+      widget.slug,
+      widget.summary['gallery_id'].toString(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Public Mozaque'),
+      leading: IconButton(
+        tooltip: 'Back to profile',
+        onPressed: () => Navigator.pop(context),
+        icon: const Icon(Icons.arrow_back),
+      ),
+    ),
+    body: FutureBuilder<Map<String, dynamic>?>(
+      future: _details,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final gallery = snapshot.data;
+        if (snapshot.hasError || gallery == null) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'This Mozaque is no longer public.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: muted),
+              ),
+            ),
+          );
+        }
+        final rawPhotos = gallery['photos'];
+        final photos = rawPhotos is List
+            ? rawPhotos
+                  .whereType<Map>()
+                  .map((photo) => Map<String, dynamic>.from(photo))
+                  .toList()
+            : <Map<String, dynamic>>[];
+        final date = DateTime.tryParse(gallery['event_date']?.toString() ?? '');
+        final eventType = _typeLabels[gallery['event_type']] ?? 'Mozaque';
+        final description = gallery['description']?.toString().trim() ?? '';
+
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 940),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 32),
+              children: [
+                _PublicProfileGalleryBanner(
+                  gallery: {...widget.summary, ...gallery},
+                  onTap: null,
+                ),
+                if (description.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Text(description, style: const TextStyle(color: muted)),
+                ],
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Memories',
+                        style: TextStyle(
+                          fontFamily: 'serif',
+                          fontSize: 24,
+                          color: ink,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${gallery['photo_count'] ?? photos.length} photos',
+                      style: const TextStyle(color: muted),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (photos.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      'Photos will appear here when they’re added.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: muted),
+                    ),
+                  )
+                else ...[
+                  ...photos.map((photo) => _PublicProfilePhoto(photo: photo)),
+                  if (photos.length <
+                      (int.tryParse(gallery['photo_count']?.toString() ?? '') ??
+                          photos.length))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Showing the latest ${photos.length} photos.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: muted, fontSize: 12),
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 10),
+                const Text(
+                  'View-only for visitors · Comments and reactions are for Mozaque members.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: muted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
 }
 
 class _PublicProfilePhoto extends StatelessWidget {

@@ -101,6 +101,17 @@ class MozaqueRepository {
         : <Map<String, dynamic>>[];
   }
 
+  Future<Map<String, dynamic>?> publicProfileGalleryDetail(
+    String slug,
+    String galleryId,
+  ) async {
+    final result = await db.rpc(
+      'public_profile_gallery_detail',
+      params: {'target_slug': slug, 'target_gallery': galleryId},
+    );
+    return result is Map ? Map<String, dynamic>.from(result) : null;
+  }
+
   Future<String> requestConnectionBySlug(String slug) async => (await db.rpc(
     'request_connection_by_slug',
     params: {'target_slug': slug},
