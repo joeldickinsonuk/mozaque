@@ -745,6 +745,7 @@ class _AttentionNavIconState extends State<_AttentionNavIcon>
 
 class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
+  Map<String, dynamic>? _activeGallery;
   int _feedPulse = 0, _mozaquesPulse = 0;
   bool _hasNewFeed = false, _hasNewMozaques = false;
   List<Map<String, dynamic>> _galleries = [],
@@ -936,6 +937,7 @@ class _HomeShellState extends State<HomeShell> {
   void _selectTab(int index) {
     setState(() {
       _tab = index;
+      _activeGallery = null;
       if (index == 0) _hasNewFeed = false;
       if (index == 3) _hasNewMozaques = false;
     });
@@ -1129,19 +1131,13 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _openGallery(Map<String, dynamic> gallery) {
-    Navigator.of(context)
-        .push(
-          MaterialPageRoute(
-            builder: (_) => GalleryScreen(
-              gallery: gallery,
-              onInvite: () => _invite(galleryId: gallery['id']),
-              onChanged: _load,
-            ),
-          ),
-        )
-        .then((_) {
-          _load();
-        });
+    setState(() => _activeGallery = gallery);
+  }
+
+  void _closeGallery() {
+    if (_activeGallery == null) return;
+    setState(() => _activeGallery = null);
+    unawaited(_load());
   }
 
   Future<void> _editProfile() async {
@@ -1430,75 +1426,93 @@ class _HomeShellState extends State<HomeShell> {
         onOpen: _openGallery,
       ),
     ];
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            _TopBar(
-              onProfile: _editProfile,
-              onSignOut: () => _db.auth.signOut(),
-              profileName: _profile?['display_name']?.toString() ?? '?',
-              avatarPath: _profile?['avatar_path'] as String?,
+    return PopScope(
+      canPop: _activeGallery == null,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _activeGallery != null) _closeGallery();
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            children: [
+              if (_activeGallery == null)
+                _TopBar(
+                  onProfile: _editProfile,
+                  onSignOut: () => _db.auth.signOut(),
+                  profileName: _profile?['display_name']?.toString() ?? '?',
+                  avatarPath: _profile?['avatar_path'] as String?,
+                ),
+              Expanded(
+                child: _activeGallery == null
+                    ? pages[_tab]
+                    : GalleryScreen(
+                        key: ValueKey(_activeGallery!['id']),
+                        gallery: _activeGallery!,
+                        onInvite: () =>
+                            _invite(galleryId: _activeGallery!['id']),
+                        onChanged: _load,
+                        onBack: _closeGallery,
+                      ),
+              ),
+            ],
+          ),
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _tab,
+          onDestinationSelected: _selectTab,
+          destinations: [
+            NavigationDestination(
+              icon: _AttentionNavIcon(
+                icon: Icons.dynamic_feed_outlined,
+                pulseToken: _feedPulse,
+                hasNew: _hasNewFeed,
+              ),
+              selectedIcon: _AttentionNavIcon(
+                icon: Icons.dynamic_feed,
+                pulseToken: _feedPulse,
+                hasNew: _hasNewFeed,
+              ),
+              label: 'Feed',
             ),
-            Expanded(child: pages[_tab]),
+            NavigationDestination(
+              icon: Icon(Icons.bookmark_border),
+              selectedIcon: Icon(Icons.bookmark),
+              label: 'Pieces',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.people_outline),
+              selectedIcon: Icon(Icons.people),
+              label: 'People',
+            ),
+            NavigationDestination(
+              icon: _AttentionNavIcon(
+                icon: Icons.photo_library_outlined,
+                pulseToken: _mozaquesPulse,
+                hasNew: _hasNewMozaques,
+              ),
+              selectedIcon: _AttentionNavIcon(
+                icon: Icons.photo_library,
+                pulseToken: _mozaquesPulse,
+                hasNew: _hasNewMozaques,
+              ),
+              label: 'Mozaques',
+            ),
           ],
         ),
+        floatingActionButton: _activeGallery == null && (_tab == 0 || _tab == 3)
+            ? MediaQuery.sizeOf(context).width < 600
+                  ? FloatingActionButton(
+                      tooltip: 'New Mozaque',
+                      onPressed: _create,
+                      child: const Icon(Icons.add),
+                    )
+                  : FloatingActionButton.extended(
+                      onPressed: _create,
+                      icon: const Icon(Icons.add),
+                      label: const Text('New Mozaque'),
+                    )
+            : null,
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: _selectTab,
-        destinations: [
-          NavigationDestination(
-            icon: _AttentionNavIcon(
-              icon: Icons.dynamic_feed_outlined,
-              pulseToken: _feedPulse,
-              hasNew: _hasNewFeed,
-            ),
-            selectedIcon: _AttentionNavIcon(
-              icon: Icons.dynamic_feed,
-              pulseToken: _feedPulse,
-              hasNew: _hasNewFeed,
-            ),
-            label: 'Feed',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bookmark_border),
-            selectedIcon: Icon(Icons.bookmark),
-            label: 'Pieces',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
-            label: 'People',
-          ),
-          NavigationDestination(
-            icon: _AttentionNavIcon(
-              icon: Icons.photo_library_outlined,
-              pulseToken: _mozaquesPulse,
-              hasNew: _hasNewMozaques,
-            ),
-            selectedIcon: _AttentionNavIcon(
-              icon: Icons.photo_library,
-              pulseToken: _mozaquesPulse,
-              hasNew: _hasNewMozaques,
-            ),
-            label: 'Mozaques',
-          ),
-        ],
-      ),
-      floatingActionButton: _tab == 0 || _tab == 3
-          ? MediaQuery.sizeOf(context).width < 600
-                ? FloatingActionButton(
-                    tooltip: 'New Mozaque',
-                    onPressed: _create,
-                    child: const Icon(Icons.add),
-                  )
-                : FloatingActionButton.extended(
-                    onPressed: _create,
-                    icon: const Icon(Icons.add),
-                    label: const Text('New Mozaque'),
-                  )
-          : null,
     );
   }
 }
@@ -3439,10 +3453,12 @@ class GalleryScreen extends StatefulWidget {
     required this.gallery,
     required this.onInvite,
     required this.onChanged,
+    required this.onBack,
   });
   final Map<String, dynamic> gallery;
   final VoidCallback onInvite;
   final Future<void> Function() onChanged;
+  final VoidCallback onBack;
   @override
   State<GalleryScreen> createState() => _GalleryScreenState();
 }
@@ -3880,6 +3896,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mozaque'),
+        automaticallyImplyLeading: false,
+        leading: IconButton(
+          tooltip: 'Back',
+          onPressed: widget.onBack,
+          icon: const Icon(Icons.arrow_back),
+        ),
         actions: [
           if (owner)
             IconButton(
