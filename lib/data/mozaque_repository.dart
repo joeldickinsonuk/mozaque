@@ -13,6 +13,11 @@ String mozaqueInviteLink(String code) =>
 String mozaqueProfileLink(String slug) =>
     Uri.https('mozaque.com', '/${Uri.encodeComponent(slug)}').toString();
 
+/// Keeps auth confirmation on the existing root redirect while restoring the
+/// profile preview through the backwards-compatible query route.
+String mozaqueProfileSignupRedirect(String slug) =>
+    Uri.https('mozaque.com', '/', {'person': slug}).toString();
+
 /// Reads both clean profile paths and older query-based profile links.
 String? mozaqueProfileSlugFromUri(Uri uri) {
   final legacySlug = uri.queryParameters['person'];
@@ -63,6 +68,11 @@ class MozaqueRepository {
   Future<void> saveName(String value) async =>
       db.from('profiles').update({'display_name': value.trim()}).eq('id', uid);
 
+  Future<void> setPublicGallery(String? galleryId) async => db
+      .from('profiles')
+      .update({'public_gallery_id': galleryId})
+      .eq('id', uid);
+
   Future<String?> saveProfileSlug(String value) async {
     final saved = await db.rpc(
       'set_my_profile_slug',
@@ -78,6 +88,14 @@ class MozaqueRepository {
     );
     if (rows is! List || rows.isEmpty) return null;
     return Map<String, dynamic>.from(rows.first as Map);
+  }
+
+  Future<Map<String, dynamic>?> publicProfileGallery(String slug) async {
+    final result = await db.rpc(
+      'public_profile_gallery',
+      params: {'target_slug': slug},
+    );
+    return result is Map ? Map<String, dynamic>.from(result) : null;
   }
 
   Future<String> requestConnectionBySlug(String slug) async => (await db.rpc(
@@ -403,6 +421,8 @@ class MozaqueRepository {
 
   Future<String> photoUrl(String path) =>
       db.storage.from('mozaque-photos').createSignedUrl(path, 3600);
+  Future<String> publicPhotoUrl(String path) =>
+      db.storage.from('mozaque-photos').createSignedUrl(path, 300);
   Future<List<Map<String, dynamic>>> feed() => photos();
   Future<bool> canUpload(Map<String, dynamic> gallery) async {
     if (gallery['owner_id'] == uid) return gallery['frozen_at'] == null;

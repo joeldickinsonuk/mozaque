@@ -149,11 +149,13 @@ class _SharedProfileLandingState extends State<_SharedProfileLanding> {
   bool _showAuth = false;
   bool _initialSignup = true;
   late Future<Map<String, dynamic>?> _profile;
+  late Future<Map<String, dynamic>?> _showcase;
 
   @override
   void initState() {
     super.initState();
     _profile = repo.lookupProfileSlug(widget.slug);
+    _showcase = repo.publicProfileGallery(widget.slug);
   }
 
   @override
@@ -187,7 +189,7 @@ class _SharedProfileLandingState extends State<_SharedProfileLanding> {
                         ),
                       ] else ...[
                         const Text(
-                          'YOU’VE BEEN INVITED TO CONNECT',
+                          'PERSONAL PROFILE',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: muted,
@@ -207,11 +209,28 @@ class _SharedProfileLandingState extends State<_SharedProfileLanding> {
                             color: ink,
                           ),
                         ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '@${widget.slug}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: muted),
+                        ),
                         const SizedBox(height: 10),
                         const Text(
-                          'Join Mozaque to send a private connection request. They’ll choose whether to accept, and their photos stay private unless they share a Mozaque with you.',
+                          'A personal profile with a public Mozaque, if they’ve chosen to share one. Only invited people can take part.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: muted, height: 1.55),
+                        ),
+                        const SizedBox(height: 14),
+                        FutureBuilder<Map<String, dynamic>?>(
+                          future: _showcase,
+                          builder: (context, showcaseSnapshot) {
+                            final gallery = showcaseSnapshot.data;
+                            if (gallery == null) {
+                              return const SizedBox.shrink();
+                            }
+                            return _PublicProfileGalleryView(gallery: gallery);
+                          },
                         ),
                         const SizedBox(height: 23),
                         FilledButton.icon(
@@ -220,7 +239,7 @@ class _SharedProfileLandingState extends State<_SharedProfileLanding> {
                             _showAuth = true;
                           }),
                           icon: const Icon(Icons.person_add_alt_1),
-                          label: const Text('Create your free account'),
+                          label: const Text('Create an account to connect'),
                         ),
                         const SizedBox(height: 10),
                         TextButton(
@@ -279,10 +298,13 @@ class _SignInScreenState extends State<SignInScreen> {
     try {
       if (_new) {
         String? emailRedirectTo;
-        if (kIsWeb &&
-            (Uri.base.queryParameters.containsKey('invite') ||
-                mozaqueProfileSlugFromUri(Uri.base) != null)) {
+        final sharedProfileSlug = kIsWeb
+            ? mozaqueProfileSlugFromUri(Uri.base)
+            : null;
+        if (kIsWeb && Uri.base.queryParameters.containsKey('invite')) {
           emailRedirectTo = Uri.base.toString();
+        } else if (sharedProfileSlug != null) {
+          emailRedirectTo = mozaqueProfileSignupRedirect(sharedProfileSlug);
         } else if (!kIsWeb) {
           try {
             final pendingLink = await AppLinks().getInitialLink();
@@ -1130,6 +1152,7 @@ class _HomeShellState extends State<HomeShell> {
         _notice('This profile link is no longer available.');
         return;
       }
+      final showcase = await repo.publicProfileGallery(slug);
       final targetId = profile['profile_id']?.toString() ?? '';
       final status = targetId == _db.auth.currentUser?.id
           ? 'self'
@@ -1141,6 +1164,7 @@ class _HomeShellState extends State<HomeShell> {
         isScrollControlled: true,
         builder: (sheetContext) => _SharedProfileSheet(
           profile: profile,
+          publicGallery: showcase,
           initialStatus: status,
           onConnect: () async {
             final result = await repo.requestConnectionBySlug(slug);
@@ -1211,7 +1235,14 @@ class _HomeShellState extends State<HomeShell> {
       builder: (_) => const CreateGallerySheet(),
     );
     if (created != null && mounted) {
+      final publicSettingFailed =
+          created.remove('_public_profile_update_failed') == true;
       await _load();
+      if (publicSettingFailed) {
+        _notice(
+          'Your Mozaque was created. Choose it in profile settings to show it publicly.',
+        );
+      }
       _openGallery(created);
     }
   }
@@ -1539,6 +1570,10 @@ class _HomeShellState extends State<HomeShell> {
       text: _profile?['profile_slug']?.toString() ?? '',
     );
     var profileSlug = _profile?['profile_slug']?.toString();
+    final ownedGalleries = _galleries
+        .where((gallery) => gallery['owner_id'] == _db.auth.currentUser?.id)
+        .toList();
+    String? publicGalleryId = _profile?['public_gallery_id']?.toString();
     var avatarPath = _profile?['avatar_path'] as String?;
     var busy = false;
     var memoryRemindersEnabled = _profile?['memory_reminders_enabled'] != false;
@@ -1694,6 +1729,53 @@ class _HomeShellState extends State<HomeShell> {
                             },
                       icon: const Icon(Icons.ios_share),
                       label: const Text('Share my link'),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                if (ownedGalleries.isEmpty)
+                  const ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('Public profile gallery'),
+                    subtitle: Text(
+                      'Create a Mozaque to choose one to show on your profile.',
+                    ),
+                  )
+                else
+                  DropdownButtonFormField<String?>(
+                    value: publicGalleryId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Gallery on your public profile',
+                      helperText:
+                          'Only the gallery and its photos are public. Visitors cannot comment, Glow or keep Pieces.',
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('None · keep my profile private'),
+                      ),
+                      ...ownedGalleries.map(
+                        (gallery) => DropdownMenuItem<String?>(
+                          value: gallery['id'] as String,
+                          child: Text(
+                            gallery['title']?.toString() ?? 'Untitled Mozaque',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: busy
+                        ? null
+                        : (value) =>
+                              setDialogState(() => publicGalleryId = value),
+                  ),
+                if (publicGalleryId != null &&
+                    (profileSlug == null || profileSlug!.isEmpty))
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Set your personal link above so people can find this public gallery.',
+                      style: TextStyle(color: muted, fontSize: 12),
                     ),
                   ),
                 SwitchListTile(
@@ -1925,12 +2007,17 @@ class _HomeShellState extends State<HomeShell> {
                             requestedSlug,
                           );
                         }
+                        if (publicGalleryId !=
+                            _profile?['public_gallery_id']?.toString()) {
+                          await repo.setPublicGallery(publicGalleryId);
+                        }
                         if (!mounted || !dialogContext.mounted) return;
                         setState(() {
                           _profile = {
                             ...?_profile,
                             'display_name': value,
                             'profile_slug': profileSlug,
+                            'public_gallery_id': publicGalleryId,
                           };
                         });
                         await _load();
@@ -3452,10 +3539,12 @@ class _ConnectionsPage extends StatelessWidget {
 class _SharedProfileSheet extends StatefulWidget {
   const _SharedProfileSheet({
     required this.profile,
+    required this.publicGallery,
     required this.initialStatus,
     required this.onConnect,
   });
   final Map<String, dynamic> profile;
+  final Map<String, dynamic>? publicGallery;
   final String initialStatus;
   final Future<String> Function() onConnect;
 
@@ -3503,6 +3592,9 @@ class _SharedProfileSheetState extends State<_SharedProfileSheet> {
     };
     final canAct = _status == 'none' || _status == 'incoming';
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * .9,
+      ),
       padding: const EdgeInsets.fromLTRB(24, 28, 24, 22),
       decoration: const BoxDecoration(
         color: paper,
@@ -3510,59 +3602,246 @@ class _SharedProfileSheetState extends State<_SharedProfileSheet> {
       ),
       child: SafeArea(
         top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _Avatar(
-              name: name,
-              path: canSeeAvatar
-                  ? widget.profile['avatar_path'] as String?
-                  : null,
-              size: 84,
-            ),
-            const SizedBox(height: 14),
-            Text(
-              name,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'serif',
-                fontSize: 29,
-                color: ink,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _Avatar(
+                name: name,
+                path: canSeeAvatar
+                    ? widget.profile['avatar_path'] as String?
+                    : null,
+                size: 84,
               ),
-            ),
-            const SizedBox(height: 7),
-            const Text(
-              'A private connection. Their photos stay private unless they share a Mozaque with you.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: muted, height: 1.45),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(_error!, style: const TextStyle(color: Color(0xFFB42318))),
+              const SizedBox(height: 14),
+              Text(
+                name,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'serif',
+                  fontSize: 29,
+                  color: ink,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                widget.publicGallery == null
+                    ? 'A private connection. Their photos stay private unless they share a Mozaque with you.'
+                    : 'This gallery is public and view-only. Comments and sharing stay within Mozaques you join.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: muted, height: 1.45),
+              ),
+              if (widget.publicGallery != null) ...[
+                const SizedBox(height: 16),
+                _PublicProfileGalleryView(
+                  gallery: widget.publicGallery!,
+                  compact: true,
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(_error!, style: const TextStyle(color: Color(0xFFB42318))),
+              ],
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: canAct && !_busy ? _connect : null,
+                  child: _busy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(buttonLabel),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
             ],
-            const SizedBox(height: 18),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: canAct && !_busy ? _connect : null,
-                child: _busy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(buttonLabel),
-              ),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
+}
+
+class _PublicProfileGalleryView extends StatelessWidget {
+  const _PublicProfileGalleryView({
+    required this.gallery,
+    this.compact = false,
+  });
+  final Map<String, dynamic> gallery;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final rawPhotos = gallery['photos'];
+    final photos = rawPhotos is List
+        ? rawPhotos
+              .whereType<Map>()
+              .map((photo) => Map<String, dynamic>.from(photo))
+              .toList()
+        : <Map<String, dynamic>>[];
+    final shownPhotos = compact ? photos.take(3) : photos;
+    final photoCount =
+        int.tryParse(gallery['photo_count']?.toString() ?? '') ?? photos.length;
+    final date = DateTime.tryParse(gallery['event_date']?.toString() ?? '');
+    final eventType = _typeLabels[gallery['event_type']] ?? 'Mozaque';
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(compact ? 12 : 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE7E9F1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.public, size: 16, color: blue),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'PUBLIC GALLERY',
+                  style: TextStyle(
+                    color: muted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+              Text(
+                date == null
+                    ? eventType
+                    : '$eventType · ${_months[date.month - 1]} ${date.day}, ${date.year}',
+                style: const TextStyle(color: muted, fontSize: 11),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Text(
+            gallery['title']?.toString() ?? 'Shared memories',
+            style: const TextStyle(
+              fontFamily: 'serif',
+              fontSize: 21,
+              color: ink,
+            ),
+          ),
+          if ((gallery['description']?.toString() ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(
+              gallery['description'].toString(),
+              style: const TextStyle(color: muted, height: 1.4),
+            ),
+          ],
+          if (photos.isEmpty) ...[
+            const SizedBox(height: 14),
+            const Text(
+              'Photos will appear here when they’re added.',
+              style: TextStyle(color: muted, fontSize: 13),
+            ),
+          ] else ...[
+            const SizedBox(height: 12),
+            ...shownPhotos.map((photo) => _PublicProfilePhoto(photo: photo)),
+            if (compact && photoCount > shownPhotos.length)
+              Padding(
+                padding: const EdgeInsets.only(top: 5),
+                child: Text(
+                  'And ${photoCount - shownPhotos.length} more photos',
+                  style: const TextStyle(color: muted, fontSize: 12),
+                ),
+              ),
+            if (!compact && photoCount > photos.length)
+              Padding(
+                padding: const EdgeInsets.only(top: 5),
+                child: Text(
+                  'Showing the latest ${photos.length} of $photoCount photos.',
+                  style: const TextStyle(color: muted, fontSize: 12),
+                ),
+              ),
+          ],
+          const SizedBox(height: 10),
+          const Text(
+            'View-only for visitors · Comments and reactions are for Mozaque members.',
+            style: TextStyle(color: muted, fontSize: 11, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PublicProfilePhoto extends StatelessWidget {
+  const _PublicProfilePhoto({required this.photo});
+  final Map<String, dynamic> photo;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(13),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AspectRatio(
+            aspectRatio: 1.55,
+            child: FutureBuilder<String>(
+              future: repo.publicPhotoUrl(photo['storage_path'] as String),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const ColoredBox(
+                    color: Color(0xFFF3F4F8),
+                    child: Icon(Icons.broken_image_outlined, color: muted),
+                  );
+                }
+                if (!snapshot.hasData) {
+                  return const ColoredBox(
+                    color: Color(0xFFF3F4F8),
+                    child: Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  );
+                }
+                return Image.network(
+                  snapshot.data!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const ColoredBox(
+                    color: Color(0xFFF3F4F8),
+                    child: Icon(Icons.broken_image_outlined, color: muted),
+                  ),
+                );
+              },
+            ),
+          ),
+          if ((photo['caption']?.toString() ?? '').trim().isNotEmpty)
+            ColoredBox(
+              color: const Color(0xFFF7F7FB),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 11,
+                  vertical: 8,
+                ),
+                child: Text(
+                  photo['caption'].toString(),
+                  style: const TextStyle(color: ink, fontSize: 13),
+                ),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _MemoryPage extends StatefulWidget {
@@ -4077,7 +4356,7 @@ class _CreateGallerySheetState extends State<CreateGallerySheet> {
       _description = TextEditingController();
   String _type = 'everyday', _policy = 'everyone', _audience = 'invited';
   DateTime _date = DateTime.now();
-  bool _recurring = false, _busy = false;
+  bool _recurring = false, _busy = false, _showOnPublicProfile = false;
   bool _loadingConnections = true;
   List<Map<String, dynamic>> _connections = [];
   final Set<String> _selectedConnectionIds = {};
@@ -4136,6 +4415,15 @@ class _CreateGallerySheetState extends State<CreateGallerySheet> {
         'audience': _audience,
       });
       _createdGallery = created;
+      if (_showOnPublicProfile) {
+        try {
+          await repo.setPublicGallery(created['id'] as String);
+        } catch (_) {
+          created['_public_profile_update_failed'] = true;
+          if (mounted) Navigator.pop(context, created);
+          return;
+        }
+      }
       if (_audience == 'invited' && _selectedConnectionIds.isNotEmpty) {
         try {
           for (final userId in _selectedConnectionIds) {
@@ -4324,6 +4612,22 @@ class _CreateGallerySheetState extends State<CreateGallerySheet> {
                       onChanged: (v) =>
                           setState(() => _audience = v ?? _audience),
                     ),
+                    const SizedBox(height: 4),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: _showOnPublicProfile,
+                      onChanged: (value) =>
+                          setState(() => _showOnPublicProfile = value),
+                      activeThumbColor: blue,
+                      title: const Text(
+                        'Show this gallery on my public profile',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      subtitle: const Text(
+                        'Anyone with your personal link can view its photos. Public visitors can’t comment, Glow or keep Pieces. Change this later in profile settings.',
+                        style: TextStyle(fontSize: 12, height: 1.4),
+                      ),
+                    ),
                     if (_audience == 'invited') ...[
                       const SizedBox(height: 14),
                       Row(
@@ -4406,9 +4710,11 @@ class _CreateGallerySheetState extends State<CreateGallerySheet> {
                         ),
                     ],
                     const SizedBox(height: 8),
-                    const Text(
-                      'Photos stay private to people with access.',
-                      style: TextStyle(fontSize: 12, color: muted),
+                    Text(
+                      _showOnPublicProfile
+                          ? 'Public visitors can view photos only. Comments and interactions stay within the Mozaque for its members.'
+                          : 'Photos stay private to people with access.',
+                      style: const TextStyle(fontSize: 12, color: muted),
                     ),
                     if (_error != null)
                       Padding(
