@@ -13,10 +13,10 @@ String mozaqueInviteLink(String code) =>
 String mozaqueProfileLink(String slug) =>
     Uri.https('mozaque.com', '/${Uri.encodeComponent(slug)}').toString();
 
-/// Keeps auth confirmation on the existing root redirect while restoring the
-/// profile preview through the backwards-compatible query route.
+/// Keeps auth confirmation on the existing root redirect and resumes the
+/// connection request after the visitor confirms their email.
 String mozaqueProfileSignupRedirect(String slug) =>
-    Uri.https('mozaque.com', '/', {'person': slug}).toString();
+    Uri.https('mozaque.com', '/', {'person': slug, 'connect': '1'}).toString();
 
 /// Reads both clean profile paths and older query-based profile links.
 String? mozaqueProfileSlugFromUri(Uri uri) {

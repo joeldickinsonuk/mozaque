@@ -29,17 +29,14 @@ void main() {
     expect(mozaqueProfileSlugFromUri(oldLink), 'joel_dickinson');
   });
 
-  test(
-    'profile sign-up confirmation returns through the supported root URL',
-    () {
-      final redirect = Uri.parse(
-        mozaqueProfileSignupRedirect('joel_dickinson'),
-      );
+  test('profile sign-up confirmation resumes the connection request', () {
+    final redirect = Uri.parse(mozaqueProfileSignupRedirect('joel_dickinson'));
 
-      expect(redirect.path, '/');
-      expect(redirect.queryParameters['person'], 'joel_dickinson');
-    },
-  );
+    expect(redirect.path, '/');
+    expect(redirect.queryParameters['person'], 'joel_dickinson');
+    expect(redirect.queryParameters['connect'], '1');
+    expect(mozaqueProfileSlugFromUri(redirect), 'joel_dickinson');
+  });
 
   test('non-profile app paths are not treated as profile links', () {
     expect(

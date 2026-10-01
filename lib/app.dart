@@ -13,6 +13,7 @@ import 'theme.dart';
 
 final _db = Supabase.instance.client;
 MozaqueRepository get repo => MozaqueRepository(_db);
+String? _pendingProfileConnectionSlug;
 const _typeLabels = {
   'everyday': 'Everyday',
   'birthday': 'Birthday',
@@ -160,7 +161,12 @@ class _SharedProfileLandingState extends State<_SharedProfileLanding> {
 
   @override
   Widget build(BuildContext context) {
-    if (_showAuth) return SignInScreen(initialSignup: _initialSignup);
+    if (_showAuth) {
+      return SignInScreen(
+        initialSignup: _initialSignup,
+        connectionSlug: widget.slug,
+      );
+    }
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -270,8 +276,13 @@ class _SharedProfileLandingState extends State<_SharedProfileLanding> {
 }
 
 class SignInScreen extends StatefulWidget {
-  const SignInScreen({super.key, this.initialSignup = false});
+  const SignInScreen({
+    super.key,
+    this.initialSignup = false,
+    this.connectionSlug,
+  });
   final bool initialSignup;
+  final String? connectionSlug;
   @override
   State<SignInScreen> createState() => _SignInScreenState();
 }
@@ -289,6 +300,7 @@ class _SignInScreenState extends State<SignInScreen> {
   void initState() {
     super.initState();
     _new = widget.initialSignup;
+    _pendingProfileConnectionSlug = widget.connectionSlug;
   }
 
   @override
@@ -936,6 +948,28 @@ class _HomeShellState extends State<HomeShell> {
   Future<void> _handleLink(Uri uri) async {
     final profileSlug = mozaqueProfileSlugFromUri(uri);
     if (profileSlug != null && profileSlug.isNotEmpty) {
+      final shouldRequestConnection =
+          uri.queryParameters['connect'] == '1' ||
+          _pendingProfileConnectionSlug == profileSlug;
+      if (shouldRequestConnection) {
+        try {
+          final status = await repo.requestConnectionBySlug(profileSlug);
+          if (_pendingProfileConnectionSlug == profileSlug) {
+            _pendingProfileConnectionSlug = null;
+          }
+          await _load();
+          if (mounted) {
+            _notice(
+              status == 'connected'
+                  ? 'You’re connected. You can now share privately on Mozaque.'
+                  : 'Your request to connect has been sent. They can accept it when they’re ready.',
+            );
+          }
+        } catch (e) {
+          if (mounted) _notice(_message(e));
+        }
+        return;
+      }
       if (_profileLinkOpened) return;
       _profileLinkOpened = true;
       await _showSharedProfile(profileSlug);
