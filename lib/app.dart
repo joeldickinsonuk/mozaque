@@ -22,6 +22,8 @@ const _typeLabels = {
   'holiday': 'Holiday',
   'other': 'Another moment',
 };
+const _productDescription =
+    'Share photos, notes and guestbook messages in private galleries with people you invite.';
 
 enum _InviteAction { copy, share, email }
 
@@ -291,23 +293,19 @@ class _SignInScreenState extends State<SignInScreen> {
                   children: [
                     const BrandMark(),
                     const SizedBox(height: 35),
-                    Text(
-                      _new
-                          ? 'A home for your people'
-                          : 'Your people.\nYour memories.',
-                      style: const TextStyle(
+                    const Text(
+                      'Private photo galleries for your people.',
+                      style: TextStyle(
                         fontFamily: 'serif',
-                        fontSize: 38,
+                        fontSize: 36,
                         height: 1.14,
                         color: ink,
                       ),
                     ),
                     const SizedBox(height: 10),
-                    Text(
-                      _new
-                          ? 'Create a private space for the moments you share.'
-                          : 'Sign in to find the memories you share.',
-                      style: const TextStyle(fontSize: 15, color: muted),
+                    const Text(
+                      _productDescription,
+                      style: TextStyle(fontSize: 15, color: muted, height: 1.5),
                     ),
                     const SizedBox(height: 27),
                     if (_new) ...[
@@ -1741,7 +1739,7 @@ class _FeedPage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'YOUR PEOPLE, YOUR MOMENTS',
+                      'PRIVATE PHOTO GALLERIES',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: muted,
                         letterSpacing: 1.5,
@@ -1760,8 +1758,8 @@ class _FeedPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Your memories stay with the people who were there.',
-                      style: TextStyle(color: muted, fontSize: 14),
+                      _productDescription,
+                      style: TextStyle(color: muted, fontSize: 14, height: 1.5),
                     ),
                     const SizedBox(height: 7),
                     const Row(
