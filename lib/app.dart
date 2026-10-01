@@ -1144,40 +1144,205 @@ class _HomeShellState extends State<HomeShell> {
         });
   }
 
-  Future<void> _editName() async {
+  Future<void> _editProfile() async {
     final controller = TextEditingController(
       text: _profile?['display_name'] ?? '',
     );
-    final value = await showDialog<String>(
+    var avatarPath = _profile?['avatar_path'] as String?;
+    var busy = false;
+    String? error;
+    await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Your name'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 60,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(hintText: 'Name'),
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Your profile'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 5),
+                _Avatar(
+                  name: _profile?['display_name']?.toString() ?? '?',
+                  path: avatarPath,
+                  size: 76,
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          final image = await ImagePicker().pickImage(
+                            source: ImageSource.gallery,
+                            maxWidth: 1200,
+                            maxHeight: 1200,
+                            imageQuality: 86,
+                          );
+                          if (image == null || !dialogContext.mounted) return;
+                          final mime = image.mimeType?.toLowerCase();
+                          final originalExt = image.name
+                              .split('.')
+                              .last
+                              .toLowerCase();
+                          final format = switch (mime) {
+                            'image/jpeg' => ('jpg', 'image/jpeg'),
+                            'image/png' => ('png', 'image/png'),
+                            'image/webp' => ('webp', 'image/webp'),
+                            _
+                                when originalExt == 'jpg' ||
+                                    originalExt == 'jpeg' =>
+                              ('jpg', 'image/jpeg'),
+                            _ when originalExt == 'png' => ('png', 'image/png'),
+                            _ when originalExt == 'webp' => (
+                              'webp',
+                              'image/webp',
+                            ),
+                            _ => null,
+                          };
+                          if (format == null) {
+                            setDialogState(() {
+                              error = 'Choose a JPEG, PNG or WebP image.';
+                            });
+                            return;
+                          }
+                          setDialogState(() {
+                            busy = true;
+                            error = null;
+                          });
+                          try {
+                            final bytes = await image.readAsBytes();
+                            if (bytes.length > 5 * 1024 * 1024) {
+                              setDialogState(() {
+                                error = 'Choose an image smaller than 5 MB.';
+                              });
+                              return;
+                            }
+                            final path = await repo.saveAvatar(
+                              bytes: bytes,
+                              extension: format.$1,
+                              contentType: format.$2,
+                            );
+                            if (!mounted || !dialogContext.mounted) return;
+                            avatarPath = path;
+                            setState(() {
+                              _profile = {...?_profile, 'avatar_path': path};
+                            });
+                            await _load();
+                            setDialogState(() {});
+                          } catch (e) {
+                            if (dialogContext.mounted) {
+                              setDialogState(() {
+                                error = _message(e);
+                              });
+                            }
+                          } finally {
+                            if (mounted && dialogContext.mounted) {
+                              setDialogState(() => busy = false);
+                            }
+                          }
+                        },
+                  icon: const Icon(Icons.add_a_photo_outlined),
+                  label: Text(
+                    avatarPath == null ? 'Add a photo' : 'Change photo',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: controller,
+                  maxLength: 60,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(hintText: 'Your name'),
+                ),
+                if (error != null)
+                  Text(
+                    error!,
+                    style: const TextStyle(color: Color(0xFFB42318)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            if (avatarPath != null)
+              TextButton(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final oldPath = avatarPath!;
+                        setDialogState(() {
+                          busy = true;
+                          error = null;
+                        });
+                        try {
+                          await repo.removeAvatar(oldPath);
+                          if (!mounted || !dialogContext.mounted) return;
+                          avatarPath = null;
+                          setState(() {
+                            _profile = {...?_profile, 'avatar_path': null};
+                          });
+                          await _load();
+                          setDialogState(() {});
+                        } catch (e) {
+                          if (dialogContext.mounted) {
+                            setDialogState(() => error = _message(e));
+                          }
+                        } finally {
+                          if (mounted && dialogContext.mounted) {
+                            setDialogState(() => busy = false);
+                          }
+                        }
+                      },
+                child: const Text('Remove photo'),
+              ),
+            TextButton(
+              onPressed: busy ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Close'),
+            ),
+            FilledButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final value = controller.text.trim();
+                      if (value.isEmpty) {
+                        setDialogState(() => error = 'Add your name first.');
+                        return;
+                      }
+                      setDialogState(() {
+                        busy = true;
+                        error = null;
+                      });
+                      try {
+                        await repo.saveName(value);
+                        if (!mounted || !dialogContext.mounted) return;
+                        setState(() {
+                          _profile = {...?_profile, 'display_name': value};
+                        });
+                        await _load();
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext);
+                        }
+                      } catch (e) {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => error = _message(e));
+                        }
+                      } finally {
+                        if (mounted && dialogContext.mounted) {
+                          setDialogState(() => busy = false);
+                        }
+                      }
+                    },
+              child: busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Save'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
       ),
     );
-    if (value == null || value.isEmpty) return;
-    try {
-      await repo.saveName(value);
-      await _load();
-    } catch (e) {
-      _notice(_message(e));
-    }
+    controller.dispose();
   }
 
   @override
@@ -1219,7 +1384,12 @@ class _HomeShellState extends State<HomeShell> {
       body: SafeArea(
         child: Column(
           children: [
-            _TopBar(onProfile: _editName, onSignOut: () => _db.auth.signOut()),
+            _TopBar(
+              onProfile: _editProfile,
+              onSignOut: () => _db.auth.signOut(),
+              profileName: _profile?['display_name']?.toString() ?? '?',
+              avatarPath: _profile?['avatar_path'] as String?,
+            ),
             Expanded(child: pages[_tab]),
           ],
         ),
@@ -1284,8 +1454,15 @@ class _HomeShellState extends State<HomeShell> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.onProfile, required this.onSignOut});
+  const _TopBar({
+    required this.onProfile,
+    required this.onSignOut,
+    required this.profileName,
+    required this.avatarPath,
+  });
   final VoidCallback onProfile, onSignOut;
+  final String profileName;
+  final String? avatarPath;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(19, 9, 16, 7),
@@ -1306,7 +1483,7 @@ class _TopBar extends StatelessWidget {
         IconButton(
           tooltip: 'Your profile',
           onPressed: onProfile,
-          icon: const Icon(Icons.account_circle_outlined),
+          icon: _Avatar(name: profileName, path: avatarPath),
         ),
         IconButton(
           tooltip: 'Sign out',
@@ -1987,7 +2164,12 @@ class _PhotoCardState extends State<_PhotoCard> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                _Avatar(name: uploader.toString()),
+                _Avatar(
+                  name: uploader.toString(),
+                  path:
+                      (p['profiles'] as Map<String, dynamic>?)?['avatar_path']
+                          as String?,
+                ),
               ],
             ),
           ),
@@ -2128,23 +2310,71 @@ class _PhotoImage extends StatelessWidget {
   );
 }
 
-class _Avatar extends StatelessWidget {
-  const _Avatar({required this.name});
+class _Avatar extends StatefulWidget {
+  const _Avatar({required this.name, this.path, this.size = 34});
   final String name;
+  final String? path;
+  final double size;
+
   @override
-  Widget build(BuildContext context) => Container(
-    width: 34,
-    height: 34,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      color: const Color(0xFFE9EDFF),
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Text(
-      name.isEmpty ? '?' : name[0].toUpperCase(),
-      style: const TextStyle(color: blue, fontWeight: FontWeight.w800),
-    ),
-  );
+  State<_Avatar> createState() => _AvatarState();
+}
+
+class _AvatarState extends State<_Avatar> {
+  Future<String>? _imageUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUrl();
+  }
+
+  @override
+  void didUpdateWidget(covariant _Avatar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path) _loadUrl();
+  }
+
+  void _loadUrl() {
+    final path = widget.path;
+    _imageUrl = path == null || path.isEmpty ? null : repo.avatarUrl(path);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = widget.name.isEmpty ? '?' : widget.name[0].toUpperCase();
+    final fallback = Container(
+      width: widget.size,
+      height: widget.size,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        color: Color(0xFFE9EDFF),
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        initial,
+        style: const TextStyle(color: blue, fontWeight: FontWeight.w800),
+      ),
+    );
+    if (_imageUrl == null) return fallback;
+    return ClipOval(
+      child: SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: FutureBuilder<String>(
+          future: _imageUrl,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return fallback;
+            return Image.network(
+              snapshot.data!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => fallback,
+            );
+          },
+        ),
+      ),
+    );
+  }
 }
 
 class _PiecesPage extends StatelessWidget {
@@ -2279,7 +2509,10 @@ class _ConnectionsPage extends StatelessWidget {
         else
           ...connections.map(
             (c) => ListTile(
-              leading: _Avatar(name: c['display_name'] ?? '?'),
+              leading: _Avatar(
+                name: c['display_name'] ?? '?',
+                path: c['avatar_path'] as String?,
+              ),
               title: Text(c['display_name'] ?? 'Mozaque member'),
               subtitle: const Text('Connected privately'),
             ),
@@ -3326,7 +3559,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
                             }
                           }),
                           contentPadding: EdgeInsets.zero,
-                          secondary: _Avatar(name: name),
+                          secondary: _Avatar(
+                            name: name,
+                            path: person['avatar_path'] as String?,
+                          ),
                           title: Text(name),
                           controlAffinity: ListTileControlAffinity.trailing,
                         );
@@ -3674,7 +3910,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
                             return ListTile(
                               contentPadding: EdgeInsets.zero,
                               dense: true,
-                              leading: _Avatar(name: name),
+                              leading: _Avatar(
+                                name: name,
+                                path: p?['avatar_path'] as String?,
+                              ),
                               title: Text(name),
                               trailing: DropdownButton<String>(
                                 value: m['role'],

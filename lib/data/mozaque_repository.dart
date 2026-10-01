@@ -21,6 +21,51 @@ class MozaqueRepository {
       db.from('profiles').select().eq('id', uid).maybeSingle();
   Future<void> saveName(String value) async =>
       db.from('profiles').update({'display_name': value.trim()}).eq('id', uid);
+
+  Future<String> saveAvatar({
+    required Uint8List bytes,
+    required String extension,
+    required String contentType,
+  }) async {
+    final oldPath = (await profile())?['avatar_path'] as String?;
+    final path = '$uid/${DateTime.now().microsecondsSinceEpoch}.$extension';
+    await db.storage
+        .from('profile-photos')
+        .uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: contentType,
+            cacheControl: '3600',
+            upsert: false,
+          ),
+        );
+    try {
+      await db.from('profiles').update({'avatar_path': path}).eq('id', uid);
+    } catch (_) {
+      try {
+        await db.storage.from('profile-photos').remove([path]);
+      } catch (_) {}
+      rethrow;
+    }
+    if (oldPath != null && oldPath.isNotEmpty) {
+      try {
+        await db.storage.from('profile-photos').remove([oldPath]);
+      } catch (_) {}
+    }
+    return path;
+  }
+
+  Future<void> removeAvatar(String path) async {
+    await db.from('profiles').update({'avatar_path': null}).eq('id', uid);
+    try {
+      await db.storage.from('profile-photos').remove([path]);
+    } catch (_) {}
+  }
+
+  Future<String> avatarUrl(String path) =>
+      db.storage.from('profile-photos').createSignedUrl(path, 3600);
+
   Future<List<Map<String, dynamic>>> galleries() async {
     final galleries = List<Map<String, dynamic>>.from(
       await db
@@ -86,7 +131,7 @@ class MozaqueRepository {
       List<Map<String, dynamic>>.from(
         await db
             .from('gallery_members')
-            .select('user_id,role,profiles(display_name)')
+            .select('user_id,role,profiles(display_name,avatar_path)')
             .eq('gallery_id', galleryId),
       );
   Future<void> addConnectionToGallery(String galleryId, String userId) async =>
@@ -106,7 +151,7 @@ class MozaqueRepository {
     var query = db
         .from('photos')
         .select(
-          '*,profiles!photos_uploader_id_fkey(display_name),galleries!photos_gallery_id_fkey(id,title,event_date,is_recurring,event_type)',
+          '*,profiles!photos_uploader_id_fkey(display_name,avatar_path),galleries!photos_gallery_id_fkey(id,title,event_date,is_recurring,event_type)',
         );
     if (galleryId != null) query = query.eq('gallery_id', galleryId);
     if (pieces) {
