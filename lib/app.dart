@@ -3,12 +3,17 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:gal/gal.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'data/mozaque_repository.dart';
+import 'platform/photo_download_stub.dart'
+    if (dart.library.js_interop) 'platform/photo_download_web.dart'
+    as browser_saver;
 import 'theme.dart';
 
 final _db = Supabase.instance.client;
@@ -3033,6 +3038,11 @@ class _PhotoCardState extends State<_PhotoCard> {
             builder: (context, constraints) => _PhotoImage(
               path: p['storage_path'],
               height: (constraints.maxWidth * .68).clamp(260, 600).toDouble(),
+              onTap: () => _openPhotoViewer(
+                context,
+                storagePath: p['storage_path'] as String,
+                caption: p['caption']?.toString(),
+              ),
             ),
           ),
           Padding(
@@ -3152,38 +3162,270 @@ const _months = [
 ];
 
 class _PhotoImage extends StatelessWidget {
-  const _PhotoImage({required this.path, this.height = 240});
+  const _PhotoImage({required this.path, this.height = 240, this.onTap});
   final String path;
   final double height;
+  final VoidCallback? onTap;
   @override
-  Widget build(BuildContext context) => FutureBuilder<String>(
-    future: repo.photoUrl(path),
-    builder: (context, snapshot) {
-      if (snapshot.hasError)
-        return SizedBox(
+  Widget build(BuildContext context) {
+    final image = FutureBuilder<String>(
+      future: repo.photoUrl(path),
+      builder: (context, snapshot) {
+        if (snapshot.hasError)
+          return SizedBox(
+            height: height,
+            child: const Center(
+              child: Icon(Icons.broken_image_outlined, color: muted, size: 32),
+            ),
+          );
+        if (!snapshot.hasData)
+          return SizedBox(
+            height: height,
+            child: const Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        return Image.network(
+          snapshot.data!,
+          width: double.infinity,
           height: height,
-          child: const Center(
-            child: Icon(Icons.broken_image_outlined, color: muted, size: 32),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => SizedBox(
+            height: height,
+            child: const Center(
+              child: Icon(Icons.broken_image_outlined, color: muted, size: 32),
+            ),
           ),
         );
-      if (!snapshot.hasData)
-        return SizedBox(
-          height: height,
-          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      },
+    );
+    if (onTap == null) return image;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: image,
+    );
+  }
+}
+
+Future<void> _openPhotoViewer(
+  BuildContext context, {
+  required String storagePath,
+  String? caption,
+  bool isPublic = false,
+}) => showGeneralDialog<void>(
+  context: context,
+  barrierDismissible: true,
+  barrierLabel: 'Close photo',
+  barrierColor: Colors.black.withValues(alpha: .94),
+  pageBuilder: (context, _, _) => _PhotoViewer(
+    storagePath: storagePath,
+    caption: caption,
+    isPublic: isPublic,
+  ),
+  transitionDuration: const Duration(milliseconds: 180),
+  transitionBuilder: (_, animation, _, child) =>
+      FadeTransition(opacity: animation, child: child),
+);
+
+class _PhotoViewer extends StatefulWidget {
+  const _PhotoViewer({
+    required this.storagePath,
+    this.caption,
+    this.isPublic = false,
+  });
+  final String storagePath;
+  final String? caption;
+  final bool isPublic;
+
+  @override
+  State<_PhotoViewer> createState() => _PhotoViewerState();
+}
+
+class _PhotoViewerState extends State<_PhotoViewer> {
+  late final Future<String> _imageUrl = widget.isPublic
+      ? repo.publicPhotoUrl(widget.storagePath)
+      : repo.photoUrl(widget.storagePath);
+  bool _saving = false;
+
+  Future<void> _saveImage() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      final response = await http.get(Uri.parse(await _imageUrl));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('The photo could not be opened.');
+      }
+      final contentType =
+          response.headers['content-type']
+              ?.split(';')
+              .first
+              .trim()
+              .toLowerCase() ??
+          'image/jpeg';
+      final extension = switch (contentType) {
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        _ => 'jpg',
+      };
+      final name = 'mozaque-photo-${DateTime.now().millisecondsSinceEpoch}';
+      if (kIsWeb) {
+        browser_saver.saveImageBytes(
+          response.bodyBytes,
+          '$name.$extension',
+          contentType,
         );
-      return Image.network(
-        snapshot.data!,
-        width: double.infinity,
-        height: height,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => SizedBox(
-          height: height,
-          child: const Center(
-            child: Icon(Icons.broken_image_outlined, color: muted, size: 32),
+      } else {
+        var hasAccess = await Gal.hasAccess();
+        if (!hasAccess) hasAccess = await Gal.requestAccess();
+        if (!hasAccess) {
+          throw StateError('Allow Mozaque to save photos to your library.');
+        }
+        await Gal.putImageBytes(response.bodyBytes, name: name);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            kIsWeb ? 'Saved from your browser.' : 'Saved to Photos.',
           ),
+          behavior: SnackBarBehavior.floating,
         ),
       );
-    },
+    } on GalException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.type.message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        final message = error is StateError
+            ? error.message.toString()
+            : 'Could not save this photo. Please try again.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.transparent,
+    body: SafeArea(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: FutureBuilder<String>(
+              future: _imageUrl,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.white70,
+                      size: 36,
+                    ),
+                  );
+                }
+                if (!snapshot.hasData) {
+                  return const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  );
+                }
+                return InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 4,
+                  child: Center(
+                    child: Image.network(
+                      snapshot.data!,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.white70,
+                        size: 36,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          Positioned(
+            top: 8,
+            left: 10,
+            right: 10,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _ViewerIconButton(
+                  tooltip: 'Close photo',
+                  icon: Icons.close_rounded,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                _ViewerIconButton(
+                  tooltip: 'Save image',
+                  icon: Icons.file_download_outlined,
+                  onPressed: _saving ? null : _saveImage,
+                  busy: _saving,
+                ),
+              ],
+            ),
+          ),
+          if ((widget.caption ?? '').trim().isNotEmpty)
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: 18,
+              child: Text(
+                widget.caption!.trim(),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  shadows: [Shadow(color: Colors.black54, blurRadius: 9)],
+                ),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _ViewerIconButton extends StatelessWidget {
+  const _ViewerIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+    this.busy = false,
+  });
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) => IconButton.filledTonal(
+    onPressed: onPressed,
+    tooltip: tooltip,
+    style: IconButton.styleFrom(
+      backgroundColor: Colors.white.withValues(alpha: .92),
+      foregroundColor: ink,
+    ),
+    icon: busy
+        ? const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : Icon(icon),
   );
 }
 
@@ -4253,14 +4495,22 @@ class _PublicProfilePhoto extends StatelessWidget {
                           ),
                         );
                       }
-                      return Image.network(
-                        snapshot.data!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const ColoredBox(
-                          color: Color(0xFFF3F4F8),
-                          child: Icon(
-                            Icons.broken_image_outlined,
-                            color: muted,
+                      return GestureDetector(
+                        onTap: () => _openPhotoViewer(
+                          context,
+                          storagePath: photo['storage_path'] as String,
+                          caption: photo['caption']?.toString(),
+                          isPublic: true,
+                        ),
+                        child: Image.network(
+                          snapshot.data!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const ColoredBox(
+                            color: Color(0xFFF3F4F8),
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              color: muted,
+                            ),
                           ),
                         ),
                       );
@@ -7616,6 +7866,11 @@ class _GalleryPhotoState extends State<_GalleryPhoto> {
             builder: (context, constraints) => _PhotoImage(
               path: widget.photo['storage_path'],
               height: (constraints.maxWidth * .68).clamp(260, 600).toDouble(),
+              onTap: () => _openPhotoViewer(
+                context,
+                storagePath: widget.photo['storage_path'] as String,
+                caption: widget.photo['caption']?.toString(),
+              ),
             ),
           ),
           if ((widget.photo['caption'] as String).isNotEmpty)

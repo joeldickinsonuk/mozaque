@@ -20,6 +20,8 @@
 	<string>APPL</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Choose photos to add to your private galleries.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save a photo you choose from Mozaque to your photo library.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
