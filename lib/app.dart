@@ -3703,10 +3703,12 @@ class _PublicProfileGalleryBanner extends StatelessWidget {
     required this.gallery,
     required this.onTap,
     this.compact = false,
+    this.expanded = false,
   });
   final Map<String, dynamic> gallery;
   final VoidCallback? onTap;
   final bool compact;
+  final bool expanded;
 
   @override
   Widget build(BuildContext context) {
@@ -3715,7 +3717,11 @@ class _PublicProfileGalleryBanner extends StatelessWidget {
     final date = DateTime.tryParse(gallery['event_date']?.toString() ?? '');
     final eventType = _typeLabels[gallery['event_type']] ?? 'Mozaque';
     final coverPath = gallery['cover_storage_path']?.toString();
-    final height = compact ? 132.0 : 190.0;
+    final height = compact
+        ? 132.0
+        : expanded
+        ? 244.0
+        : 190.0;
 
     return Card(
       margin: EdgeInsets.zero,
@@ -3756,6 +3762,36 @@ class _PublicProfileGalleryBanner extends StatelessWidget {
                   ),
                 ),
               ),
+              if (expanded)
+                Positioned(
+                  top: 16,
+                  left: 16,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 11,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .94),
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.auto_awesome, size: 14, color: blue),
+                        const SizedBox(width: 6),
+                        Text(
+                          'A ${eventType.toLowerCase()} to remember',
+                          style: const TextStyle(
+                            color: ink,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               Positioned(
                 left: 16,
                 right: 14,
@@ -3880,10 +3916,68 @@ class _PublicProfileGalleryDetailPageState
     );
   }
 
+  Future<void> _connectWithOwner() async {
+    if (_db.auth.currentSession == null) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => _SharedProfileLanding(slug: widget.slug),
+        ),
+      );
+      return;
+    }
+    try {
+      final profile = await repo.lookupProfileSlug(widget.slug);
+      if (!mounted) return;
+      if (profile == null) {
+        _showPublicGalleryNotice('This profile link is no longer available.');
+        return;
+      }
+      final targetId = profile['profile_id']?.toString() ?? '';
+      final status = targetId == _db.auth.currentUser?.id
+          ? 'self'
+          : await repo.connectionStatus(targetId);
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (sheetContext) => _SharedProfileSheet(
+          profile: profile,
+          publicGalleries: const [],
+          slug: widget.slug,
+          initialStatus: status,
+          onConnect: () => repo.requestConnectionBySlug(widget.slug),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        _showPublicGalleryNotice(
+          'We couldn’t open the connection just now. Please try again.',
+        );
+      }
+    }
+  }
+
+  void _showPublicGalleryNotice(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+      );
+  }
+
+  Future<void> _shareOwnerLink() async {
+    await SharePlus.instance.share(
+      ShareParams(
+        text: 'Connect with me on Mozaque: ${mozaqueProfileLink(widget.slug)}',
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('Public Mozaque'),
+      title: const Text('Mozaque'),
       leading: IconButton(
         tooltip: 'Back to profile',
         onPressed: () => Navigator.pop(context),
@@ -3916,8 +4010,6 @@ class _PublicProfileGalleryDetailPageState
                   .map((photo) => Map<String, dynamic>.from(photo))
                   .toList()
             : <Map<String, dynamic>>[];
-        final date = DateTime.tryParse(gallery['event_date']?.toString() ?? '');
-        final eventType = _typeLabels[gallery['event_type']] ?? 'Mozaque';
         final description = gallery['description']?.toString().trim() ?? '';
 
         return Center(
@@ -3929,27 +4021,66 @@ class _PublicProfileGalleryDetailPageState
                 _PublicProfileGalleryBanner(
                   gallery: {...widget.summary, ...gallery},
                   onTap: null,
+                  expanded: true,
+                ),
+                const SizedBox(height: 16),
+                _PublicProfileConnectCard(
+                  slug: widget.slug,
+                  onConnect: _connectWithOwner,
+                  onShare: _shareOwnerLink,
                 ),
                 if (description.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Text(description, style: const TextStyle(color: muted)),
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFFE6E9F2)),
+                    ),
+                    child: Text(
+                      description,
+                      style: const TextStyle(
+                        color: Color(0xFF596176),
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
                 ],
-                const SizedBox(height: 18),
+                const SizedBox(height: 26),
                 Row(
                   children: [
                     const Expanded(
                       child: Text(
-                        'Memories',
+                        'Moments in this Mozaque',
                         style: TextStyle(
                           fontFamily: 'serif',
-                          fontSize: 24,
+                          fontSize: 25,
                           color: ink,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
-                    Text(
-                      '${gallery['photo_count'] ?? photos.length} photos',
-                      style: const TextStyle(color: muted),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFECEEFF),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${gallery['photo_count'] ?? photos.length} ${((gallery['photo_count'] as num?)?.toInt() ?? photos.length) == 1 ? 'photo' : 'photos'}',
+                        style: const TextStyle(
+                          color: blue,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -3991,63 +4122,219 @@ class _PublicProfilePhoto extends StatelessWidget {
   final Map<String, dynamic> photo;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: ClipRRect(
-      borderRadius: BorderRadius.circular(13),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          AspectRatio(
-            aspectRatio: 1.55,
-            child: FutureBuilder<String>(
-              future: repo.publicPhotoUrl(photo['storage_path'] as String),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return const ColoredBox(
-                    color: Color(0xFFF3F4F8),
-                    child: Icon(Icons.broken_image_outlined, color: muted),
-                  );
-                }
-                if (!snapshot.hasData) {
-                  return const ColoredBox(
-                    color: Color(0xFFF3F4F8),
-                    child: Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                  );
-                }
-                return Image.network(
-                  snapshot.data!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const ColoredBox(
-                    color: Color(0xFFF3F4F8),
-                    child: Icon(Icons.broken_image_outlined, color: muted),
-                  ),
-                );
-              },
-            ),
+  Widget build(BuildContext context) {
+    final glowCount = (photo['glow_count'] as num?)?.toInt() ?? 0;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE6E9F2)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0C142047),
+            blurRadius: 20,
+            offset: Offset(0, 7),
           ),
-          if ((photo['caption']?.toString() ?? '').trim().isNotEmpty)
-            ColoredBox(
-              color: const Color(0xFFF7F7FB),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 11,
-                  vertical: 8,
-                ),
-                child: Text(
-                  photo['caption'].toString(),
-                  style: const TextStyle(color: ink, fontSize: 13),
-                ),
-              ),
-            ),
         ],
       ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(19),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AspectRatio(
+              aspectRatio: 1.55,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  FutureBuilder<String>(
+                    future: repo.publicPhotoUrl(
+                      photo['storage_path'] as String,
+                    ),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        return const ColoredBox(
+                          color: Color(0xFFF3F4F8),
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: muted,
+                          ),
+                        );
+                      }
+                      if (!snapshot.hasData) {
+                        return const ColoredBox(
+                          color: Color(0xFFF3F4F8),
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        );
+                      }
+                      return Image.network(
+                        snapshot.data!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const ColoredBox(
+                          color: Color(0xFFF3F4F8),
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: muted,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  Positioned(
+                    right: 14,
+                    bottom: 14,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .96),
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: const [
+                          BoxShadow(color: Color(0x26000000), blurRadius: 12),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.local_fire_department_rounded,
+                            color: Color(0xFFE09A35),
+                            size: 17,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            '$glowCount ${glowCount == 1 ? 'Glow' : 'Glows'}',
+                            style: const TextStyle(
+                              color: ink,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if ((photo['caption']?.toString() ?? '').trim().isNotEmpty)
+              ColoredBox(
+                color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(17, 13, 17, 16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(
+                          Icons.format_quote_rounded,
+                          color: Color(0xFF8A93AD),
+                          size: 19,
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          photo['caption'].toString(),
+                          style: const TextStyle(
+                            color: ink,
+                            fontSize: 14,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PublicProfileConnectCard extends StatelessWidget {
+  const _PublicProfileConnectCard({
+    required this.slug,
+    required this.onConnect,
+    required this.onShare,
+  });
+
+  final String slug;
+  final VoidCallback onConnect;
+  final VoidCallback onShare;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.fromLTRB(17, 16, 12, 16),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFF0F2FF), Color(0xFFF8F1FF)],
+      ),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: const Color(0xFFE2E4FA)),
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: const Icon(Icons.people_alt_outlined, color: blue),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Know @$slug?',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: ink,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 3),
+              const Text(
+                'Connect privately on Mozaque',
+                style: TextStyle(color: muted, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          onPressed: onShare,
+          tooltip: 'Share profile link',
+          icon: const Icon(Icons.ios_share_rounded, color: blue, size: 19),
+        ),
+        FilledButton(
+          onPressed: onConnect,
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+            visualDensity: VisualDensity.compact,
+          ),
+          child: const Text('Connect'),
+        ),
+      ],
     ),
   );
 }
