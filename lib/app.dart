@@ -3759,11 +3759,34 @@ class _GalleryScreenState extends State<GalleryScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
           child: _ConversationPanel(
-            galleryId: _gallery['id'] as String,
             photoId: photo['id'] as String,
             galleryTitle: _gallery['title']?.toString() ?? 'this Mozaque',
             galleryOwner: _gallery['owner_id'] == _db.auth.currentUser?.id,
             readOnly: _gallery['frozen_at'] != null,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showGuestbook() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: .96,
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+          child: Material(
+            color: const Color(0xFFF7F8FC),
+            child: _GuestbookPage(
+              galleryId: _gallery['id'] as String,
+              galleryTitle: _gallery['title']?.toString() ?? 'Your Mozaque',
+              galleryOwner: _gallery['owner_id'] == _db.auth.currentUser?.id,
+              readOnly: _gallery['frozen_at'] != null,
+            ),
           ),
         ),
       ),
@@ -4131,6 +4154,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
           icon: const Icon(Icons.arrow_back),
         ),
         actions: [
+          IconButton.filledTonal(
+            tooltip: 'Guestbook',
+            onPressed: _showGuestbook,
+            icon: const Icon(Icons.forum_outlined),
+          ),
           if (owner)
             IconButton(
               tooltip: 'Invite',
@@ -4487,16 +4515,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                SizedBox(
-                  height: 370,
-                  child: _ConversationPanel(
-                    galleryId: _gallery['id'] as String,
-                    galleryTitle: title,
-                    galleryOwner: owner,
-                    readOnly: _gallery['frozen_at'] != null,
-                  ),
-                ),
-                const SizedBox(height: 18),
                 Row(
                   children: [
                     Expanded(
@@ -4575,15 +4593,13 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
 class _ConversationPanel extends StatefulWidget {
   const _ConversationPanel({
-    required this.galleryId,
     required this.galleryTitle,
     required this.galleryOwner,
     required this.readOnly,
-    this.photoId,
+    required this.photoId,
   });
 
-  final String galleryId, galleryTitle;
-  final String? photoId;
+  final String photoId, galleryTitle;
   final bool galleryOwner, readOnly;
 
   @override
@@ -4595,8 +4611,6 @@ class _ConversationPanelState extends State<_ConversationPanel> {
   List<Map<String, dynamic>> _entries = [];
   bool _loading = true, _posting = false;
   String? _error;
-
-  bool get _isPhotoNote => widget.photoId != null;
 
   @override
   void initState() {
@@ -4612,9 +4626,7 @@ class _ConversationPanelState extends State<_ConversationPanel> {
 
   Future<void> _load() async {
     try {
-      final entries = _isPhotoNote
-          ? await repo.photoNotes(widget.photoId!)
-          : await repo.guestbookEntries(widget.galleryId);
+      final entries = await repo.photoNotes(widget.photoId);
       if (!mounted) return;
       setState(() {
         _entries = entries;
@@ -4633,11 +4645,7 @@ class _ConversationPanelState extends State<_ConversationPanel> {
     if (body.isEmpty || _posting) return;
     setState(() => _posting = true);
     try {
-      if (_isPhotoNote) {
-        await repo.addPhotoNote(widget.photoId!, body);
-      } else {
-        await repo.addGuestbookEntry(widget.galleryId, body);
-      }
+      await repo.addPhotoNote(widget.photoId, body);
       _controller.clear();
       await _load();
     } catch (e) {
@@ -4671,11 +4679,7 @@ class _ConversationPanelState extends State<_ConversationPanel> {
     );
     if (confirmed != true) return;
     try {
-      if (_isPhotoNote) {
-        await repo.deletePhotoNote(entry['id'] as String);
-      } else {
-        await repo.deleteGuestbookEntry(entry['id'] as String);
-      }
+      await repo.deletePhotoNote(entry['id'] as String);
       await _load();
     } catch (e) {
       if (mounted) {
@@ -4693,7 +4697,7 @@ class _ConversationPanelState extends State<_ConversationPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          _isPhotoNote ? 'Notes on this photo' : 'Guestbook',
+          'Notes on this photo',
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
             color: ink,
             fontWeight: FontWeight.w700,
@@ -4701,9 +4705,7 @@ class _ConversationPanelState extends State<_ConversationPanel> {
         ),
         const SizedBox(height: 3),
         Text(
-          _isPhotoNote
-              ? 'A little context on “${widget.galleryTitle}”. Only people in this Mozaque can read it.'
-              : 'Birthday wishes, wedding notes and family stories. Only people in this Mozaque can read these.',
+          'A little context on “${widget.galleryTitle}”. Only people in this Mozaque can read it.',
           style: const TextStyle(color: muted, fontSize: 12, height: 1.35),
         ),
         const SizedBox(height: 8),
@@ -4721,9 +4723,7 @@ class _ConversationPanelState extends State<_ConversationPanel> {
               : _entries.isEmpty
               ? Center(
                   child: Text(
-                    _isPhotoNote
-                        ? 'Add the first note to this memory.'
-                        : 'Leave the first message in this Mozaque.',
+                    'Add the first note to this memory.',
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: muted),
                   ),
@@ -4804,9 +4804,7 @@ class _ConversationPanelState extends State<_ConversationPanel> {
                   maxLines: 3,
                   textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
-                    hintText: _isPhotoNote
-                        ? 'Add a note about this moment…'
-                        : 'Leave a message…',
+                    hintText: 'Add a note about this moment…',
                     counterText: '',
                     isDense: true,
                     border: OutlineInputBorder(
@@ -4838,6 +4836,545 @@ class _ConversationPanelState extends State<_ConversationPanel> {
 String _friendlyConversationError(Object error) => error is PostgrestException
     ? error.message
     : 'Could not load or save this message. Please try again.';
+
+class _GuestbookPage extends StatefulWidget {
+  const _GuestbookPage({
+    required this.galleryId,
+    required this.galleryTitle,
+    required this.galleryOwner,
+    required this.readOnly,
+  });
+
+  final String galleryId, galleryTitle;
+  final bool galleryOwner, readOnly;
+
+  @override
+  State<_GuestbookPage> createState() => _GuestbookPageState();
+}
+
+class _GuestbookPageState extends State<_GuestbookPage> {
+  final _controller = TextEditingController();
+  final _scrollController = ScrollController();
+  List<Map<String, dynamic>> _entries = [];
+  String? _replyToId, _replyToName, _error;
+  bool _loading = true, _posting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final entries = await repo.guestbookEntries(widget.galleryId);
+      if (!mounted) return;
+      setState(() {
+        _entries = entries;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = _friendlyConversationError(e));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  List<Map<String, dynamic>> _replies(String entryId) =>
+      _entries.where((entry) => entry['parent_id'] == entryId).toList();
+
+  Future<void> _post() async {
+    final body = _controller.text.trim();
+    if (body.isEmpty || _posting) return;
+    setState(() => _posting = true);
+    try {
+      await repo.addGuestbookEntry(
+        widget.galleryId,
+        body,
+        parentId: _replyToId,
+      );
+      _controller.clear();
+      setState(() {
+        _replyToId = null;
+        _replyToName = null;
+      });
+      await _load();
+      if (_scrollController.hasClients) {
+        await _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlyConversationError(e))));
+      }
+    } finally {
+      if (mounted) setState(() => _posting = false);
+    }
+  }
+
+  Future<void> _glow(Map<String, dynamic> entry) async {
+    final active = entry['my_glow'] == true;
+    try {
+      await repo.guestbookGlow(entry['id'] as String, !active);
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlyConversationError(e))));
+      }
+    }
+  }
+
+  Future<void> _delete(Map<String, dynamic> entry) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove this comment?'),
+        content: const Text(
+          'The comment and its replies will be removed from the guestbook.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep it'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await repo.deleteGuestbookEntry(entry['id'] as String);
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_friendlyConversationError(e))));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final roots = _entries
+        .where((entry) => entry['parent_id'] == null)
+        .toList();
+    final userId = _db.auth.currentUser?.id;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(17, 5, 12, 13),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'Close guestbook',
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Guestbook',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: ink,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      widget.galleryTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: muted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Refresh guestbook',
+                onPressed: _load,
+                icon: const Icon(Icons.refresh, color: blue),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(22, 0, 22, 15),
+          child: Row(
+            children: [
+              const Icon(Icons.lock_outline, size: 15, color: muted),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'A shared place for wishes, stories and little memories. Only people in this Mozaque can read it.',
+                  style: const TextStyle(
+                    color: muted,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: _loading && _entries.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null && _entries.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: muted),
+                    ),
+                  ),
+                )
+              : roots.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(28),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 68,
+                          height: 68,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE9ECFF),
+                            borderRadius: BorderRadius.circular(22),
+                          ),
+                          child: const Icon(
+                            Icons.auto_stories_outlined,
+                            color: blue,
+                            size: 31,
+                          ),
+                        ),
+                        const SizedBox(height: 15),
+                        Text(
+                          'Leave the first note',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                color: ink,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        const SizedBox(height: 5),
+                        const Text(
+                          'Share a wish, a story, or what this day meant to you.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: muted, height: 1.4),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.fromLTRB(16, 15, 16, 18),
+                  itemCount: roots.length,
+                  itemBuilder: (context, index) {
+                    final root = roots[index];
+                    final replies = _replies(root['id'] as String);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 13),
+                      child: Column(
+                        children: [
+                          _GuestbookMessage(
+                            entry: root,
+                            isReply: false,
+                            canReply: !widget.readOnly,
+                            canDelete:
+                                !widget.readOnly &&
+                                (root['author_id'] == userId ||
+                                    widget.galleryOwner),
+                            onGlow: () => _glow(root),
+                            onReply: () {
+                              final profile =
+                                  root['profiles'] as Map<String, dynamic>?;
+                              setState(() {
+                                _replyToId = root['id'] as String;
+                                _replyToName =
+                                    profile?['display_name']?.toString() ??
+                                    'this person';
+                              });
+                            },
+                            onDelete: () => _delete(root),
+                          ),
+                          if (replies.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 24, top: 8),
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                  border: Border(
+                                    left: BorderSide(
+                                      color: Color(0xFFDCE1F3),
+                                      width: 2,
+                                    ),
+                                  ),
+                                ),
+                                padding: const EdgeInsets.only(left: 11),
+                                child: Column(
+                                  children: [
+                                    for (final reply in replies)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 8,
+                                        ),
+                                        child: _GuestbookMessage(
+                                          entry: reply,
+                                          isReply: true,
+                                          canReply: false,
+                                          canDelete:
+                                              !widget.readOnly &&
+                                              (reply['author_id'] == userId ||
+                                                  widget.galleryOwner),
+                                          onGlow: () => _glow(reply),
+                                          onReply: () {},
+                                          onDelete: () => _delete(reply),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+        const Divider(height: 1),
+        if (widget.readOnly)
+          const Padding(
+            padding: EdgeInsets.all(15),
+            child: Text(
+              'This Mozaque has been preserved. The guestbook is read-only.',
+              style: TextStyle(color: muted, fontSize: 12),
+            ),
+          )
+        else
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              14,
+              10,
+              14,
+              10 + MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_replyToId != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 7),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.reply, size: 16, color: blue),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            'Replying to ${_replyToName ?? 'comment'}',
+                            style: const TextStyle(color: muted, fontSize: 12),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Cancel reply',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => setState(() {
+                            _replyToId = null;
+                            _replyToName = null;
+                          }),
+                          icon: const Icon(Icons.close, size: 17),
+                        ),
+                      ],
+                    ),
+                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        maxLength: 1000,
+                        minLines: 1,
+                        maxLines: 4,
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: InputDecoration(
+                          hintText: _replyToId == null
+                              ? 'Write a note for everyone…'
+                              : 'Write your reply…',
+                          counterText: '',
+                          filled: true,
+                          fillColor: Colors.white,
+                          isDense: true,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE1E5EF),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE1E5EF),
+                            ),
+                          ),
+                        ),
+                        onSubmitted: (_) => _post(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      tooltip: 'Post guestbook message',
+                      onPressed: _posting ? null : _post,
+                      icon: _posting
+                          ? const SizedBox(
+                              width: 17,
+                              height: 17,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send_rounded),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _GuestbookMessage extends StatelessWidget {
+  const _GuestbookMessage({
+    required this.entry,
+    required this.isReply,
+    required this.canReply,
+    required this.canDelete,
+    required this.onGlow,
+    required this.onReply,
+    required this.onDelete,
+  });
+
+  final Map<String, dynamic> entry;
+  final bool isReply, canReply, canDelete;
+  final VoidCallback onGlow, onReply, onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final profile = entry['profiles'] as Map<String, dynamic>?;
+    final author = profile?['display_name']?.toString() ?? 'Someone';
+    final active = entry['my_glow'] == true;
+    final glowCount = (entry['glow_count'] as num?)?.toInt() ?? 0;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 11, 9, 3),
+      decoration: BoxDecoration(
+        color: isReply ? Colors.white.withValues(alpha: .72) : Colors.white,
+        border: Border.all(color: const Color(0xFFE5E8F1)),
+        borderRadius: BorderRadius.circular(17),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _Avatar(name: author, path: profile?['avatar_path'] as String?),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      author,
+                      style: const TextStyle(
+                        color: ink,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      _relativeDate(entry['created_at']),
+                      style: const TextStyle(color: muted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              if (canDelete)
+                IconButton(
+                  tooltip: 'Remove comment',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.more_horiz, color: muted),
+                ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(42, 8, 6, 2),
+            child: Text(
+              entry['body'] as String,
+              style: const TextStyle(color: ink, fontSize: 14, height: 1.45),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 34),
+            child: Wrap(
+              spacing: 2,
+              children: [
+                TextButton.icon(
+                  onPressed: onGlow,
+                  style: TextButton.styleFrom(
+                    foregroundColor: active ? const Color(0xFFE5953D) : muted,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: Icon(
+                    active
+                        ? Icons.local_fire_department
+                        : Icons.local_fire_department_outlined,
+                    size: 17,
+                  ),
+                  label: Text(glowCount == 0 ? 'Glow' : '$glowCount'),
+                ),
+                if (canReply)
+                  TextButton.icon(
+                    onPressed: onReply,
+                    style: TextButton.styleFrom(
+                      foregroundColor: muted,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.reply, size: 17),
+                    label: const Text('Reply'),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _GalleryPhoto extends StatefulWidget {
   const _GalleryPhoto({

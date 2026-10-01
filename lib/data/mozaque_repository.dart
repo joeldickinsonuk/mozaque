@@ -205,25 +205,68 @@ class MozaqueRepository {
         .order('created_at'),
   );
 
-  Future<List<Map<String, dynamic>>> guestbookEntries(
-    String galleryId,
-  ) async => List<Map<String, dynamic>>.from(
-    await db
-        .from('guestbook_entries')
-        .select(
-          'id,gallery_id,author_id,body,created_at,profiles!guestbook_entries_author_id_fkey(display_name,avatar_path)',
-        )
-        .eq('gallery_id', galleryId)
-        .order('created_at'),
-  );
+  Future<List<Map<String, dynamic>>> guestbookEntries(String galleryId) async {
+    final entries = List<Map<String, dynamic>>.from(
+      await db
+          .from('guestbook_entries')
+          .select(
+            'id,gallery_id,parent_id,author_id,body,created_at,profiles!guestbook_entries_author_id_fkey(display_name,avatar_path)',
+          )
+          .eq('gallery_id', galleryId)
+          .order('created_at'),
+    );
+    if (entries.isEmpty) return entries;
+    final ids = entries.map((entry) => entry['id'] as String).toList();
+    final glows = await db
+        .from('guestbook_glows')
+        .select('entry_id,user_id')
+        .inFilter('entry_id', ids);
+    final counts = <String, int>{};
+    final mine = <String>{};
+    for (final glow in glows) {
+      final id = glow['entry_id'] as String;
+      counts[id] = (counts[id] ?? 0) + 1;
+      if (glow['user_id'] == uid) mine.add(id);
+    }
+    for (final entry in entries) {
+      entry['glow_count'] = counts[entry['id']] ?? 0;
+      entry['my_glow'] = mine.contains(entry['id']);
+    }
+    return entries;
+  }
 
   Future<void> addPhotoNote(String photoId, String body) async => db
       .from('photo_notes')
       .insert({'photo_id': photoId, 'author_id': uid, 'body': body.trim()});
 
-  Future<void> addGuestbookEntry(String galleryId, String body) async => db
-      .from('guestbook_entries')
-      .insert({'gallery_id': galleryId, 'author_id': uid, 'body': body.trim()});
+  Future<void> addGuestbookEntry(
+    String galleryId,
+    String body, {
+    String? parentId,
+  }) async => db.from('guestbook_entries').insert({
+    'gallery_id': galleryId,
+    'author_id': uid,
+    'body': body.trim(),
+    'parent_id': parentId,
+  });
+
+  Future<void> guestbookGlow(String entryId, bool active) async {
+    if (active) {
+      await db
+          .from('guestbook_glows')
+          .upsert(
+            {'entry_id': entryId, 'user_id': uid},
+            onConflict: 'entry_id,user_id',
+            ignoreDuplicates: true,
+          );
+    } else {
+      await db
+          .from('guestbook_glows')
+          .delete()
+          .eq('entry_id', entryId)
+          .eq('user_id', uid);
+    }
+  }
 
   Future<void> deletePhotoNote(String id) async =>
       db.from('photo_notes').delete().eq('id', id);
