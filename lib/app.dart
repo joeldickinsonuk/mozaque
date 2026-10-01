@@ -1858,8 +1858,8 @@ class _FeedPage extends StatelessWidget {
                           icon = Icons.local_fire_department_outlined;
                           accent = const Color(0xFFE5953D);
                         case 'photo_note':
-                          kind = 'PHOTO NOTE';
-                          title = '$actor left a note on a photo';
+                          kind = 'PHOTO COMMENT';
+                          title = '$actor commented on a photo';
                           detail = '“$detailText” · In “$galleryName” · $date';
                           icon = Icons.chat_bubble_outline;
                           accent = const Color(0xFF8B62D8);
@@ -4713,7 +4713,7 @@ class _ConversationPanelState extends State<_ConversationPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Notes on this photo',
+          'Comments on this photo',
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
             color: ink,
             fontWeight: FontWeight.w700,
@@ -4739,7 +4739,7 @@ class _ConversationPanelState extends State<_ConversationPanel> {
               : _entries.isEmpty
               ? Center(
                   child: Text(
-                    'Add the first note to this memory.',
+                    'Add the first comment to this memory.',
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: muted),
                   ),
@@ -5487,11 +5487,6 @@ class _GalleryPhotoState extends State<_GalleryPhoto> {
               runSpacing: 0,
               children: [
                 TextButton.icon(
-                  onPressed: widget.onNotes,
-                  icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                  label: const Text('Notes'),
-                ),
-                TextButton.icon(
                   style: TextButton.styleFrom(
                     minimumSize: const Size(48, 48),
                     foregroundColor: _glow ? const Color(0xFFE5953D) : muted,
@@ -5511,6 +5506,11 @@ class _GalleryPhotoState extends State<_GalleryPhoto> {
                           size: 18,
                         ),
                   label: Text(glowCount == 0 ? 'Glow' : '$glowCount'),
+                ),
+                TextButton.icon(
+                  onPressed: widget.onNotes,
+                  icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                  label: const Text('Comments'),
                 ),
                 TextButton.icon(
                   onPressed: () async {
