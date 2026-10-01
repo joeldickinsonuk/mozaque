@@ -254,9 +254,7 @@ class _SignInScreenState extends State<SignInScreen> {
       _confirmationSent = false;
     });
     try {
-      final redirectTo = kIsWeb
-          ? Uri.base.toString()
-          : 'https://mozaque.com/';
+      final redirectTo = kIsWeb ? Uri.base.toString() : 'https://mozaque.com/';
       await _db.auth.resend(
         type: OtpType.signup,
         email: email,
@@ -1256,6 +1254,7 @@ class _HomeShellState extends State<HomeShell> {
     var avatarPath = _profile?['avatar_path'] as String?;
     var busy = false;
     String? error;
+    String? deleteError;
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -1357,6 +1356,133 @@ class _HomeShellState extends State<HomeShell> {
                   maxLength: 60,
                   textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(hintText: 'Your name'),
+                ),
+                const SizedBox(height: 8),
+                const Divider(),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () async {
+                            final confirmation = TextEditingController();
+                            final confirmed = await showDialog<bool>(
+                              context: dialogContext,
+                              builder: (confirmContext) => StatefulBuilder(
+                                builder: (confirmContext, setConfirmState) =>
+                                    AlertDialog(
+                                      title: const Text('Delete your account?'),
+                                      content: SingleChildScrollView(
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'This permanently removes your profile, account, every Mozaque you own, and the photos you uploaded. Photos in a Mozaque you own will also be removed for everyone. This cannot be undone.',
+                                            ),
+                                            const SizedBox(height: 16),
+                                            TextField(
+                                              controller: confirmation,
+                                              autofocus: true,
+                                              decoration: const InputDecoration(
+                                                labelText:
+                                                    'Type DELETE to confirm',
+                                              ),
+                                            ),
+                                            if (deleteError != null ||
+                                                error != null) ...[
+                                              const SizedBox(height: 10),
+                                              Text(
+                                                deleteError ?? error!,
+                                                style: const TextStyle(
+                                                  color: Color(0xFFB42318),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: busy
+                                              ? null
+                                              : () => Navigator.pop(
+                                                  confirmContext,
+                                                  false,
+                                                ),
+                                          child: const Text('Keep my account'),
+                                        ),
+                                        FilledButton(
+                                          style: FilledButton.styleFrom(
+                                            backgroundColor: const Color(
+                                              0xFFB42318,
+                                            ),
+                                          ),
+                                          onPressed: busy
+                                              ? null
+                                              : () async {
+                                                  if (confirmation.text
+                                                          .trim() !=
+                                                      'DELETE') {
+                                                    setConfirmState(() {
+                                                      deleteError =
+                                                          'Type DELETE exactly to continue.';
+                                                    });
+                                                    return;
+                                                  }
+                                                  setConfirmState(() {
+                                                    busy = true;
+                                                    deleteError = null;
+                                                  });
+                                                  try {
+                                                    await repo.deleteAccount();
+                                                    if (confirmContext
+                                                        .mounted) {
+                                                      Navigator.pop(
+                                                        confirmContext,
+                                                        true,
+                                                      );
+                                                    }
+                                                  } catch (e) {
+                                                    if (confirmContext
+                                                        .mounted) {
+                                                      setConfirmState(() {
+                                                        deleteError = _message(
+                                                          e,
+                                                        );
+                                                        busy = false;
+                                                      });
+                                                    }
+                                                  }
+                                                },
+                                          child: busy
+                                              ? const SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.white,
+                                                      ),
+                                                )
+                                              : const Text('Delete account'),
+                                        ),
+                                      ],
+                                    ),
+                              ),
+                            );
+                            confirmation.dispose();
+                            if (confirmed == true && dialogContext.mounted) {
+                              Navigator.pop(dialogContext);
+                            }
+                          },
+                    icon: const Icon(Icons.delete_forever_outlined),
+                    label: const Text('Delete account and data'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFFB42318),
+                    ),
+                  ),
                 ),
                 if (error != null)
                   Text(
@@ -3730,6 +3856,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
   bool _deleting = false;
   bool _canUpload = false;
   String? _error;
+  double? _uploadProgress;
+  int _uploadingIndex = 0, _uploadingTotal = 0;
+  String _uploadingName = '';
   @override
   void initState() {
     super.initState();
@@ -3788,16 +3917,37 @@ class _GalleryScreenState extends State<GalleryScreen> {
       ),
     );
     if (!mounted || caption == null) return;
-    setState(() => _uploading = true);
+    setState(() {
+      _uploading = true;
+      _uploadingTotal = selected.length;
+      _uploadingIndex = 0;
+      _uploadProgress = 0;
+    });
     try {
-      for (final x in selected) {
+      for (var index = 0; index < selected.length; index++) {
+        final x = selected[index];
+        if (mounted) {
+          setState(() {
+            _uploadingIndex = index;
+            _uploadingName = x.name;
+            _uploadProgress = index / selected.length;
+          });
+        }
         await repo.upload(
           _gallery['id'],
           await x.readAsBytes(),
           x.name,
           caption,
+          onProgress: (sent, total) {
+            if (!mounted) return;
+            setState(() {
+              _uploadProgress =
+                  (index + (total == 0 ? 0 : sent / total)) / selected.length;
+            });
+          },
         );
       }
+      if (mounted) setState(() => _uploadProgress = 1);
       await _load();
       await widget.onChanged();
     } catch (e) {
@@ -3814,7 +3964,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
           ),
         );
     } finally {
-      if (mounted) setState(() => _uploading = false);
+      if (mounted) {
+        setState(() {
+          _uploading = false;
+          _uploadProgress = null;
+          _uploadingIndex = 0;
+          _uploadingTotal = 0;
+          _uploadingName = '';
+        });
+      }
     }
   }
 
@@ -4684,6 +4842,56 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       ),
                   ],
                 ),
+                if (_uploading)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E6EF)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.cloud_upload_outlined,
+                                size: 19,
+                                color: blue,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Uploading ${_uploadingIndex + 1} of $_uploadingTotal · $_uploadingName',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: ink,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '${((_uploadProgress ?? 0) * 100).round()}%',
+                                style: const TextStyle(color: muted),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 9),
+                          LinearProgressIndicator(
+                            value: _uploadProgress,
+                            minHeight: 5,
+                            borderRadius: BorderRadius.circular(9),
+                            color: blue,
+                            backgroundColor: blue.withOpacity(.12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 if (_loading && _photos.isEmpty)
                   const Padding(
                     padding: EdgeInsets.all(25),

@@ -2,15 +2,13 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// A live, cross-platform entry point for invitations. Native app links will
 /// replace this only after iOS and Android association files are configured.
-String mozaqueInviteLink(String code) => Uri.https(
-  'mozaque.com',
-  '/',
-  {'invite': code},
-).toString();
+String mozaqueInviteLink(String code) =>
+    Uri.https('mozaque.com', '/', {'invite': code}).toString();
 
 class MozaqueRepository {
   MozaqueRepository(this.db);
@@ -60,6 +58,15 @@ class MozaqueRepository {
     await db.from('profiles').update({'avatar_path': null}).eq('id', uid);
     try {
       await db.storage.from('profile-photos').remove([path]);
+    } catch (_) {}
+  }
+
+  Future<void> deleteAccount() async {
+    await db.functions.invoke('delete-account', body: const {});
+    // Auth user deletion does not revoke an already-issued JWT immediately.
+    // Clear this device's local session as soon as the server confirms deletion.
+    try {
+      await db.auth.signOut(scope: SignOutScope.local);
     } catch (_) {}
   }
 
@@ -303,8 +310,9 @@ class MozaqueRepository {
     String galleryId,
     Uint8List bytes,
     String fileName,
-    String caption,
-  ) async {
+    String caption, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
     final extension = fileName.split('.').last.toLowerCase();
     final mime = switch (extension) {
       'jpg' || 'jpeg' => 'image/jpeg',
@@ -319,13 +327,7 @@ class MozaqueRepository {
       throw const FormatException('Each photo must be smaller than 10 MB.');
     final photoId = const UuidLike().next();
     final path = '$galleryId/$uid/$photoId.$extension';
-    await db.storage
-        .from('mozaque-photos')
-        .uploadBinary(
-          path,
-          bytes,
-          fileOptions: FileOptions(contentType: mime, upsert: false),
-        );
+    await _uploadWithProgress(path, bytes, mime, onProgress);
     try {
       await db.from('photos').insert({
         'id': photoId,
@@ -340,6 +342,58 @@ class MozaqueRepository {
       await db.storage.from('mozaque-photos').remove([path]);
       rethrow;
     }
+  }
+
+  Future<void> _uploadWithProgress(
+    String path,
+    Uint8List bytes,
+    String mime,
+    void Function(int sent, int total)? onProgress,
+  ) async {
+    final bucket = db.storage.from('mozaque-photos');
+    final encodedPath = Uri(pathSegments: path.split('/')).path;
+    final uri = Uri.parse('${bucket.url}/object/mozaque-photos/$encodedPath');
+    final request = http.StreamedRequest('POST', uri)
+      ..headers.addAll(bucket.headers)
+      ..headers['Content-Type'] = mime
+      ..headers['Cache-Control'] = '3600'
+      ..headers['x-upsert'] = 'false'
+      ..contentLength = bytes.length;
+    final client = http.Client();
+    try {
+      final responseFuture = client.send(request);
+      const chunkSize = 64 * 1024;
+      var sent = 0;
+      onProgress?.call(0, bytes.length);
+      for (var start = 0; start < bytes.length; start += chunkSize) {
+        final end = (start + chunkSize).clamp(0, bytes.length).toInt();
+        request.sink.add(bytes.sublist(start, end));
+        sent = end;
+        onProgress?.call(sent, bytes.length);
+        // Yield between chunks so progress can paint during larger uploads.
+        await Future<void>.delayed(Duration.zero);
+      }
+      await request.sink.close();
+      final response = await responseFuture;
+      final body = await response.stream.bytesToString();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw FormatException(_storageErrorMessage(body, response.statusCode));
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  String _storageErrorMessage(String body, int statusCode) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        final message =
+            decoded['message'] ?? decoded['error'] ?? decoded['msg'];
+        if (message is String && message.isNotEmpty) return message;
+      }
+    } catch (_) {}
+    return 'Photo upload failed (HTTP $statusCode). Please try again.';
   }
 
   Future<void> keepPiece(String photoId, bool keep) async {
