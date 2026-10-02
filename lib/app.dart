@@ -5815,6 +5815,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
                   ? e.message
                   : e is PostgrestException
                   ? e.message
+                  : e is AuthException
+                  ? 'Your sign-in has expired. Please sign in again, then retry the upload.'
+                  : e is StateError
+                  ? e.message.toString()
                   : 'Could not add these photos.',
             ),
           ),

@@ -511,8 +511,15 @@ class MozaqueRepository {
     final bucket = db.storage.from('mozaque-photos');
     final encodedPath = Uri(pathSegments: path.split('/')).path;
     final uri = Uri.parse('${bucket.url}/object/mozaque-photos/$encodedPath');
+    final accessToken = (await db.auth.getSession())?.accessToken;
+    if (accessToken == null || accessToken.isEmpty) {
+      throw StateError('Please sign in again before adding photos.');
+    }
     final request = http.StreamedRequest('POST', uri)
       ..headers.addAll(bucket.headers)
+      // This progress-aware request bypasses Supabase's auth-aware HTTP
+      // client, so explicitly use the current user's JWT for Storage RLS.
+      ..headers['Authorization'] = 'Bearer $accessToken'
       ..headers['Content-Type'] = mime
       ..headers['Cache-Control'] = '3600'
       ..headers['x-upsert'] = 'false'
@@ -548,7 +555,13 @@ class MozaqueRepository {
       if (decoded is Map) {
         final message =
             decoded['message'] ?? decoded['error'] ?? decoded['msg'];
-        if (message is String && message.isNotEmpty) return message;
+        if (message is String && message.isNotEmpty) {
+          final normalized = message.toLowerCase();
+          if (statusCode == 401 || normalized.contains('authorization')) {
+            return 'Your sign-in needs refreshing. Please sign out and back in, then try again.';
+          }
+          return message;
+        }
       }
     } catch (_) {}
     return 'Photo upload failed (HTTP $statusCode). Please try again.';
